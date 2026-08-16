@@ -7,6 +7,9 @@ cache.json
 cache.json.tmp
 quota.json
 
+# wrangler 的本機快取，含 Cloudflare 帳號 ID 與帳號名稱（帳號名可能是 email）
+.wrangler/
+
 # === 一般忽略 ===
 __pycache__/
 *.pyc

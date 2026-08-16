@@ -88,8 +88,8 @@ function setWelcome(show) {
  *            金鑰留在 Worker，前端只帶封測碼
  * ================================================================== */
 
-/* 部署到 GitHub Pages 前，把這行改成你的 Worker 網址 */
-const WORKER_URL = 'https://maple-tw-proxy.你的帳號.workers.dev';
+/* Cloudflare Worker 代理。金鑰存在它的 secret 裡，前端拿不到也不需要。 */
+const WORKER_URL = 'https://maple-tw-proxy.karmma33.workers.dev';
 
 const LOCAL_HOSTS = ['127.0.0.1', 'localhost', ''];
 const HOSTED = LOCAL_HOSTS.indexOf(location.hostname) === -1;
