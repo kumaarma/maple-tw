@@ -1,0 +1,16 @@
+# === 絕對不能上傳 ===
+# API 金鑰明文
+apikey.txt
+
+# 快取與用量計數（含查詢過的角色資料）
+cache.json
+cache.json.tmp
+quota.json
+
+# === 一般忽略 ===
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

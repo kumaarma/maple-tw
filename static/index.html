@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>新楓之谷角色查詢 · TMS</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="leaf">🍁</span>
+    <div>
+      <h1>新楓之谷角色查詢</h1>
+      <p class="sub">台版 TMS · NEXON Open API</p>
+    </div>
+  </div>
+
+  <nav class="nav">
+    <button type="button" class="navbtn active" data-view="character">角色查詢</button>
+    <button type="button" class="navbtn" data-view="compare">裝備比對</button>
+  </nav>
+
+  <div class="topright">
+    <span id="quota" class="quota" title="今日已用的 API 次數"></span>
+    <button id="keyBtn" class="ghost" type="button" title="設定 NEXON Open API 金鑰">⚙ API 金鑰</button>
+  </div>
+</header>
+
+<!-- ============================ 角色查詢 ============================ -->
+<div id="view-character" class="view active">
+
+  <section class="controls">
+    <div class="search-card">
+      <form id="searchForm" autocomplete="off">
+        <label class="grow search-name">
+          <span>角色名稱</span>
+          <input id="nameInput" type="text" placeholder="例如：楓之谷大師" spellcheck="false" required autofocus>
+        </label>
+        <label class="search-date">
+          <span>快照日期</span>
+          <input id="dateInput" type="date">
+        </label>
+        <button type="submit" id="goBtn" class="search-btn">🔍 查詢</button>
+      </form>
+      <p class="hint search-note">留空日期查最新；填日期查該日快照（不可選今天）。</p>
+    </div>
+
+    <div id="history" class="history"></div>
+  </section>
+
+  <main>
+    <div id="welcome" class="welcome">
+      <div class="welcome-icon" aria-hidden="true">🍁</div>
+      <h2>查詢台版角色資料</h2>
+      <p class="welcome-lead">輸入角色名稱，即可查看等級、裝備、聯盟、HEXA 等資訊。</p>
+      <ol class="welcome-steps">
+        <li><strong>輸入角色名</strong>並按查詢</li>
+        <li><strong>瀏覽上方分頁</strong>查看裝備、聯盟等詳細資料</li>
+        <li>分頁資料<strong>點開才載入</strong>，節省 API 配額</li>
+      </ol>
+    </div>
+    <div id="status" class="status"></div>
+    <div id="result" hidden></div>
+  </main>
+
+</div>
+
+<!-- ============================ 裝備比對 ============================ -->
+<div id="view-compare" class="view">
+
+  <section class="controls">
+    <div class="search-card">
+      <form id="cmpForm" autocomplete="off">
+        <label class="grow search-name">
+          <span>角色 A</span>
+          <input id="cmpA" type="text" list="cmpNames" placeholder="輸入角色名稱" spellcheck="false" required>
+        </label>
+        <label class="grow search-name">
+          <span>角色 B</span>
+          <input id="cmpB" type="text" list="cmpNames" placeholder="輸入角色名稱" spellcheck="false" required>
+        </label>
+        <button type="submit" id="cmpGo" class="search-btn">⇄ 比對</button>
+      </form>
+      <datalist id="cmpNames"></datalist>
+
+      <div class="board-tools">
+        <label>
+          <span>多格欄位配對</span>
+          <select id="cmpPair">
+            <option value="value">同類欄位依名稱配對（戒指／墜飾等）</option>
+            <option value="name">同一件裝備對比</option>
+            <option value="slot">依欄位編號</option>
+          </select>
+        </label>
+        <label>
+          <span>只顯示</span>
+          <select id="cmpFilter">
+            <option value="all">全部欄位</option>
+            <option value="diff">有差異的欄位</option>
+            <option value="both">兩邊都有裝備</option>
+          </select>
+        </label>
+        <span id="cmpCost" class="exp-cost"></span>
+      </div>
+
+      <p class="hint">
+        逐格比對兩位角色的裝備：星力、潛能等級、卷軸次數與數值總和。
+        每位角色需 4 次 API（ocid、基本、能力值、裝備），抓過就留在本次工作階段。
+      </p>
+    </div>
+  </section>
+
+  <main>
+    <div id="cmpStatus" class="status"></div>
+    <div id="cmpResult"></div>
+  </main>
+
+</div>
+
+<!-- ============================ 裝備詳情 ============================ -->
+<div id="itemModal" class="modal" hidden>
+  <div class="tipbox" id="itemTip"></div>
+</div>
+
+<!-- ============================ 金鑰 ============================ -->
+<div id="keyModal" class="modal" hidden>
+  <div class="modal-box">
+    <h2>NEXON Open API 金鑰</h2>
+    <p class="modal-note">
+      到 <a href="https://openapi.nexon.com" target="_blank" rel="noopener">openapi.nexon.com</a>
+      → <b>My Applications</b> → 註冊應用程式 → 遊戲選 <b>MapleStory(TW)</b>。<br>
+      金鑰只會存在本機 <code>apikey.txt</code>。
+    </p>
+    <input id="keyInput" type="password" placeholder="live_xxxx… 或 test_xxxx…" spellcheck="false">
+    <p id="keyState" class="key-state"></p>
+    <div class="modal-actions">
+      <button type="button" class="ghost" id="cacheClear">清空快取</button>
+      <span style="flex:1"></span>
+      <button type="button" class="ghost" id="keyCancel">關閉</button>
+      <button type="button" id="keySave">儲存</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

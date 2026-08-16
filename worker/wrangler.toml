@@ -1,0 +1,12 @@
+name = "maple-tw-proxy"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+# 非機密設定放這裡。逗號分隔，不要有結尾斜線。
+# 部署後把 GitHub Pages 的網址填進來，例如 https://你的帳號.github.io
+[vars]
+ALLOWED_ORIGINS = "https://你的帳號.github.io"
+
+# 機密用指令設定，不要寫在這個檔案裡（這個檔會進 git）：
+#   wrangler secret put NEXON_KEY
+#   wrangler secret put BETA_TOKEN
