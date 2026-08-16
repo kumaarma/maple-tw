@@ -288,6 +288,29 @@ table.rank tr.clickable:hover td { background: var(--card-hi); }
 td.rank-no { color: var(--accent); font-weight: 700; width: 1%; }
 td.rank-name { font-weight: 600; }
 
+/* ---------- 萌獸 ---------- */
+
+/* API 沒有萌獸圖示，用名稱首字當識別 */
+.fam-initial {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.15;
+  word-break: break-all;
+}
+.famcard .item-icon { width: 44px; height: 44px; }
+.famcard .item-opts b { color: var(--text); }
+
+.famslot { border-style: dashed; }
+.famslot.on {
+  border-style: solid;
+  border-color: var(--accent-dim);
+  background: rgba(255, 154, 60, .08);
+}
+.famslot.on .v { color: var(--accent); }
+.famslot-exp { font-size: 11px; color: var(--muted); margin-top: 3px; }
+
 /* ---------- 寵物 ---------- */
 
 .petcard {

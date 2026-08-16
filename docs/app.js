@@ -243,6 +243,7 @@ const EP = {
   union:         'user/union',
   unionRaider:   'user/union-raider',
   unionArtifact: 'user/union-artifact',
+  familiar:      'character/familiar',
   unionChampion: 'user/union-champion',
   skill6:        'character/skill',
   skill5:        'character/skill',
@@ -264,6 +265,7 @@ const EP_LABEL = {
   android: '機器人', pet: '寵物', linkSkill: '連結技能', vmatrix: 'V 矩陣',
   hexa: 'HEXA 矩陣', hexaStat: 'HEXA 能力值', union: '聯盟',
   unionRaider: '聯盟攻擊隊', unionArtifact: '聯盟神器', unionChampion: '聯盟冠軍',
+  familiar: '萌獸',
   skill6: '6 轉技能（供 HEXA 取圖示）',
   skill5: '5 轉技能（供 V 矩陣取圖示）',
   skill4: '4 轉技能（強化核心的圖示來源）',
@@ -332,6 +334,7 @@ const TABS = [
   ['裝備',     ['equip', 'setEffect'],                          renderEquip],
   ['造型',     ['beauty', 'android', 'cash'],                   renderCosmetic],
   ['寵物',     ['pet'],                                         renderPets],
+  ['萌獸',     ['familiar'],                                    renderFamiliar],
   ['符文',     ['symbol'],                                      renderSymbol],
   ['聯盟',     ['union', 'unionRaider', 'unionArtifact', 'unionChampion'], renderUnion],
   ['HEXA',     ['hexa', 'hexaStat', 'skill6'],                  renderHexa],
@@ -1361,6 +1364,121 @@ function renderPets() {
   }
 
   if (!any) f.appendChild(el('div', 'empty', '這個角色沒有寵物'));
+  return f;
+}
+
+/* ---------- 萌獸 ---------- */
+
+/** 一隻萌獸的選項列表 */
+function familiarOptions(f) {
+  const list = el('div', 'item-opts');
+  (f.option || []).forEach((o) => {
+    if (!o || !o.option_name) return;
+    const row = el('div');
+    row.appendChild(document.createTextNode(o.option_name + '　'));
+    row.appendChild(el('b', null, txt(o.option_value)));
+    list.appendChild(row);
+  });
+  return list;
+}
+
+function familiarCard(f, badge) {
+  const card = el('div', 'item famcard');
+
+  const box = el('div', 'item-icon');
+  box.appendChild(el('span', 'fam-initial', String(f.familiar_name || '?').slice(0, 2)));
+  card.appendChild(box);
+
+  const body = el('div', 'item-body');
+
+  const head = el('div', 'hexa-head');
+  head.appendChild(el('span', 'item-name', txt(f.familiar_name)));
+  if (f.option_level) head.appendChild(el('span', 'hexa-lv', '選項 Lv.' + f.option_level));
+  body.appendChild(head);
+
+  const tags = el('div', 'pet-tags');
+  if (badge) tags.appendChild(el('span', 'pet-tag type', badge));
+  if (f.familiar_nickname && f.familiar_nickname !== f.familiar_name) {
+    tags.appendChild(el('span', 'pet-tag', '暱稱：' + f.familiar_nickname));
+  }
+  if (f.familiar_level) tags.appendChild(el('span', 'pet-tag', 'Lv.' + f.familiar_level));
+  // familiar_grade 的值實測是「爆擊機率」「BOSS怪物傷害」這類，不是稀有度，
+  // 所以標成中性的「類型」而不是「等級」
+  if (f.familiar_grade) tags.appendChild(el('span', 'pet-tag', '類型：' + f.familiar_grade));
+  if (f.skill_name) tags.appendChild(el('span', 'pet-tag', '技能：' + f.skill_name));
+  body.appendChild(tags);
+
+  body.appendChild(familiarOptions(f));
+  card.appendChild(body);
+  return card;
+}
+
+function renderFamiliar() {
+  const f = frag();
+  addErrors(f, ['familiar']);
+  const fam = d('familiar');
+  if (!fam) {
+    if (!DATA.familiar || DATA.familiar.ok) f.appendChild(el('div', 'empty', '沒有萌獸資料'));
+    return f;
+  }
+
+  const list = fam.familiar_info || [];
+  const slots = fam.familiar_link_slot || [];
+
+  /* ---- 召喚中 ---- */
+  const summoned = list.filter((x) => x.summoned_flag === 'true');
+  if (summoned.length) {
+    f.appendChild(title('召喚中'));
+    const wrap = el('div', 'items');
+    summoned.forEach((x) => wrap.appendChild(familiarCard(x, '召喚中')));
+    f.appendChild(wrap);
+  }
+
+  /* ---- 羈絆欄位 ---- */
+  if (slots.length) {
+    f.appendChild(title('萌獸羈絆（' + slots.length + ' 格）'));
+    const grid = el('div', 'grid');
+    slots.forEach((s) => {
+      const c = el('div', 'kv famslot' + (s.active_flag === 'true' ? ' on' : ''));
+      c.appendChild(el('div', 'k', '第 ' + txt(s.slot_id) + ' 格'));
+      c.appendChild(el('div', 'v', s.familiar_name || '未使用'));
+      if (s.expire_date) {
+        c.appendChild(el('div', 'famslot-exp',
+          '到期 ' + String(s.expire_date).slice(0, 10).replace(/-/g, '/')));
+      }
+      grid.appendChild(c);
+    });
+    f.appendChild(grid);
+  }
+
+  /* ---- 已羈絆的萌獸 ---- */
+  const linked = list.filter((x) => x.familiar_state === 'linked');
+  if (linked.length) {
+    f.appendChild(title('已羈絆（' + linked.length + '）'));
+    const wrap = el('div', 'items');
+    linked.forEach((x) => wrap.appendChild(familiarCard(x, '羈絆中')));
+    f.appendChild(wrap);
+  }
+
+  /* ---- 其餘已登錄的 ---- */
+  const rest = list.filter((x) => x.familiar_state !== 'linked'
+    && x.summoned_flag !== 'true');
+  if (rest.length) {
+    const det = el('details', 'exp-table');
+    det.appendChild(el('summary', null, '已登錄的萌獸（' + rest.length + '）'));
+    const wrap = el('div', 'items');
+    rest.forEach((x) => wrap.appendChild(familiarCard(x, null)));
+    det.appendChild(wrap);
+    f.appendChild(det);
+  }
+
+  if (!list.length && !slots.length) {
+    f.appendChild(el('div', 'empty', '這個角色沒有萌獸'));
+  } else {
+    f.appendChild(el('p', 'hint',
+      'API 沒有提供萌獸圖示，也沒有遊戲內顯示的稀有度（傳說／罕見等）欄位；'
+      + '「類型」欄位是官方回傳的 familiar_grade，實際內容是效果分類而非稀有度。'));
+  }
   return f;
 }
 
