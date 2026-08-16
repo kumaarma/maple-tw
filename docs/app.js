@@ -111,11 +111,37 @@ function setBetaToken(v) {
   } catch (e) { /* 隱私模式就算了 */ }
 }
 
+/**
+ * 封測碼要放進 HTTP 標頭。中文與 emoji 會讓 fetch 直接拋 TypeError
+ * （無法轉成 ByteString），錯誤訊息又難懂，所以先擋下並說清楚。
+ *
+ * 這裡刻意比規範更嚴：標頭值其實接受整個 Latin-1（連 é ü 都過得了），
+ * 但 wrangler 存的是 UTF-8、瀏覽器送的是 Latin-1 單位元組，兩邊編碼對不上，
+ * 結果會是「設了一個看似有效卻永遠驗不過的碼」。限制成 ASCII 可以避免這種悶虧。
+ *
+ * 回傳錯誤說明，沒問題則回傳空字串。
+ */
+function betaTokenProblem(v) {
+  if (!v) return '請輸入封測碼。';
+  if (/[\r\n]/.test(v)) return '封測碼不能包含換行。';
+  // eslint-disable-next-line no-control-regex
+  if (/[^\x20-\x7E\t]/.test(v)) {
+    return '封測碼只能使用半形英數字與符號 —— 它要放進 HTTP 標頭，'
+         + '中文、emoji 等非 ASCII 字元無法傳送。';
+  }
+  return '';
+}
+
 /** 統一出口：線上模式會補上封測碼標頭 */
 function apiFetch(path, init) {
   const opts = init || {};
   if (HOSTED) {
-    opts.headers = Object.assign({}, opts.headers, { 'x-beta-token': betaToken() });
+    // 舊版存下的封測碼可能含非 ASCII，帶進標頭會讓 fetch 拋錯，
+    // 那樣連錯誤訊息都顯示不出來。有問題就送空字串，讓 Worker 回 401。
+    const t = betaToken();
+    opts.headers = Object.assign({}, opts.headers, {
+      'x-beta-token': betaTokenProblem(t) ? '' : t,
+    });
   }
   return fetch(API_BASE + path, opts);
 }
@@ -3532,6 +3558,12 @@ function wireKeyModal() {
     /* 線上模式輸入的是封測碼，不是 API 金鑰 —— 金鑰在 Worker 端，
        前端拿不到也不該拿到。存本機後直接驗一次。 */
     if (HOSTED) {
+      const bad = betaTokenProblem(key);
+      if (bad) {
+        box0.className = 'key-state bad';
+        box0.textContent = bad;
+        return;
+      }
       setBetaToken(key);
       $('#keyInput').value = '';
       const ok = await refreshKeyState();
@@ -3591,10 +3623,11 @@ function wireKeyModal() {
     const note = document.querySelector('#keyModal .modal-note');
     if (note) {
       note.textContent = 'API 金鑰保存在伺服器端，你不需要（也拿不到）它。'
-        + '請輸入管理者發給你的封測碼，只會存在這台裝置的瀏覽器裡。';
+        + '請輸入管理者發給你的封測碼，只會存在這台裝置的瀏覽器裡。'
+        + '封測碼限半形英數字與符號（不支援中文與 emoji）。';
     }
     const inp = $('#keyInput');
-    if (inp) inp.placeholder = '輸入封測碼';
+    if (inp) inp.placeholder = '輸入封測碼（半形英數字）';
     const cc = $('#cacheClear');
     if (cc) cc.hidden = true;
   }
