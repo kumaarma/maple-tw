@@ -29,7 +29,9 @@ from urllib.parse import parse_qsl, urlencode, urlparse
 from urllib.request import Request, urlopen
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-STATIC = os.path.join(ROOT, "static")
+# 資料夾叫 docs 是為了配合 GitHub Pages —— 從分支部署時
+# 來源資料夾只能選根目錄或 /docs，不能指定任意名稱。
+STATIC = os.path.join(ROOT, "docs")
 KEYFILE = os.path.join(ROOT, "apikey.txt")
 CACHEFILE = os.path.join(ROOT, "cache.json")
 QUOTAFILE = os.path.join(ROOT, "quota.json")
