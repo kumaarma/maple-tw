@@ -1450,4 +1450,38 @@ pre.raw {
   .welcome h2 { font-size: 19px; }
   .welcome-steps { font-size: 13px; padding-left: 28px; }
   .tabs-hint { display: block; width: 100%; }
+
+  /* 卡片格線：290px 的下限在 360px 寬的手機上會擠到邊，放寬一點 */
+  .items { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  .icards { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .pet-body { grid-template-columns: 1fr; }
+
+  /* 大數字在窄螢幕容易撐開容器 */
+  .pwr-diff { font-size: 21px; }
+  .pwr-val { font-size: 18px; }
+  .hero-lv b { font-size: 25px; }
+  .hero-power .value { font-size: 22px; }
+
+  /* 分頁列項目多，縮一點才不會佔掉整個畫面 */
+  .tab { padding: 9px 11px; font-size: 14px; }
+  .pset { padding: 6px 11px; font-size: 12px; }
+
+  /* 觸控目標：手指比滑鼠粗，小按鈕要夠大才點得到 */
+  .chip-x { padding: 0 14px; }
+  .chip-go { padding: 8px 6px 8px 14px; }
+  .navbtn { padding: 8px 14px; }
+
+  /* 裝備欄與聯盟版圖本來就有橫向捲動的容器，這裡只確保不被裁掉 */
+  .eqgrid { padding: 8px; gap: 4px; }
+  .eqrow { grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); }
+}
+
+/* 極窄螢幕（例如 iPhone SE 直向 375px 以下） */
+@media (max-width: 400px) {
+  .items { grid-template-columns: 1fr; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+  .hero-name { font-size: 21px; }
+  .explist { min-width: 100%; }
+  .explist-row { grid-template-columns: 52px 1fr auto; font-size: 12.5px; padding: 5px 10px; }
 }
