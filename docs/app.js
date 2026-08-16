@@ -2727,37 +2727,24 @@ async function cmpFetch(name) {
 
   const b = basic.ok ? basic.data : {};
   const s = stat.ok ? stat.data : {};
-  const items = (equip.ok && Array.isArray(equip.data.item_equipment))
-    ? equip.data.item_equipment : [];
+  const eq = equip.ok ? equip.data : {};
 
-  const bySlot = {};
-  items.forEach((it) => { bySlot[it.item_equipment_slot] = it; });
-
-  const totals = {};
-  const potTotals = {};        // 「名稱|單位」-> 全身潛能加總
-  const etcTotals = {};        // 卷軸貢獻（item_etc_option）加總
-  let starTotal = 0;
-  let scrollTotal = 0;         // 卷軸總次數
-  let potUnparsedTotal = 0;
-  items.forEach((it) => {
-    const t = it.item_total_option || {};
-    CMP_SUM_FIELDS.forEach(([k]) => { totals[k] = (totals[k] || 0) + n0(t[k]); });
-    starTotal += n0(it.starforce);
-
-    /* item_etc_option 就是卷軸那一段，除以卷數即平均每卷幾攻 */
-    const sc = n0(it.scroll_upgrade);
-    if (sc > 0) {
-      scrollTotal += sc;
-      const etc = it.item_etc_option || {};
-      CMP_SUM_FIELDS.forEach(([k]) => { etcTotals[k] = (etcTotals[k] || 0) + n0(etc[k]); });
+  /* 保留所有裝備頁，讓比對時可以切換 —— 有些角色目前穿戴的不是最強的那套。
+     注意「目前穿戴」含圖騰、拼圖等不受預設組管理的欄位，件數會比預設組多。 */
+  const sets = [];
+  if (Array.isArray(eq.item_equipment) && eq.item_equipment.length) {
+    sets.push({ key: 'cur', label: '目前穿戴', items: eq.item_equipment });
+  }
+  for (let i = 1; i <= 3; i++) {
+    const arr = eq['item_equipment_preset_' + i];
+    if (Array.isArray(arr) && arr.length) {
+      sets.push({
+        key: 'p' + i,
+        label: '預設 ' + i + (n0(eq.preset_no) === i ? '（使用中）' : ''),
+        items: arr,
+      });
     }
-
-    const ps = potSummary(it);
-    Object.keys(ps).forEach((k) => {
-      potTotals[k] = (potTotals[k] || 0) + ps[k];
-    });
-    potUnparsedTotal += potUnparsed(it);
-  });
+  }
 
   /* final_stat 有四十幾項，全部留著 —— 這是解釋戰鬥力差距的關鍵，
      而且資料已經抓回來了，不留等於白丟。 */
@@ -2780,6 +2767,45 @@ async function cmpFetch(name) {
     power: power,
     stats: stats,
     statOrder: statOrder,
+    sets: sets,
+  };
+}
+
+/**
+ * 從一組裝備算出比對要用的所有衍生數值。
+ * 抽出來是為了讓切換裝備頁時能重算，不必重打 API。
+ */
+function cmpDerive(items) {
+  const list = items || [];
+  const bySlot = {};
+  list.forEach((it) => { bySlot[it.item_equipment_slot] = it; });
+
+  const totals = {};
+  const potTotals = {};        // 「名稱|單位」-> 全身潛能加總
+  const etcTotals = {};        // 卷軸貢獻（item_etc_option）加總
+  let starTotal = 0;
+  let scrollTotal = 0;         // 卷軸總次數
+  let potUnparsedTotal = 0;
+
+  list.forEach((it) => {
+    const t = it.item_total_option || {};
+    CMP_SUM_FIELDS.forEach(([k]) => { totals[k] = (totals[k] || 0) + n0(t[k]); });
+    starTotal += n0(it.starforce);
+
+    /* item_etc_option 就是卷軸那一段，除以卷數即平均每卷幾攻 */
+    const sc = n0(it.scroll_upgrade);
+    if (sc > 0) {
+      scrollTotal += sc;
+      const etc = it.item_etc_option || {};
+      CMP_SUM_FIELDS.forEach(([k]) => { etcTotals[k] = (etcTotals[k] || 0) + n0(etc[k]); });
+    }
+
+    const ps = potSummary(it);
+    Object.keys(ps).forEach((k) => { potTotals[k] = (potTotals[k] || 0) + ps[k]; });
+    potUnparsedTotal += potUnparsed(it);
+  });
+
+  return {
     bySlot: bySlot,
     totals: totals,
     potTotals: potTotals,
@@ -2787,8 +2813,20 @@ async function cmpFetch(name) {
     etcTotals: etcTotals,
     starTotal: starTotal,
     scrollTotal: scrollTotal,
-    count: items.length,
+    count: list.length,
   };
+}
+
+/** 取某一方目前選定的裝備頁，並把衍生數值併進來 */
+function cmpSide(name, whichSel) {
+  const raw = CMP_DATA[name];
+  if (!raw) return null;
+  const sets = raw.sets || [];
+  if (!sets.length) return null;
+
+  const want = whichSel ? whichSel.value : '';
+  const set = sets.filter((s) => s.key === want)[0] || sets[0];
+  return Object.assign({}, raw, cmpDerive(set.items), { setLabel: set.label });
 }
 
 /** 平均每卷幾攻：卷軸貢獻的攻擊值 ÷ 卷軸次數 */
@@ -3186,9 +3224,23 @@ function cmpRender() {
 
   const nameA = $('#cmpA').value.trim();
   const nameB = $('#cmpB').value.trim();
-  const a = CMP_DATA[nameA];
-  const b = CMP_DATA[nameB];
+  const a = cmpSide(nameA, $('#cmpSetA'));
+  const b = cmpSide(nameB, $('#cmpSetB'));
   if (!a || !b) return;
+
+  /* 「目前穿戴」含圖騰、拼圖等不受預設組管理的欄位，件數會比預設組多。
+     兩邊挑到件數差很多的組合時，總和類的比較就不對等，要講清楚。 */
+  if (Math.abs(a.count - b.count) >= 5) {
+    const warn = el('div', 'cmp-warn');
+    warn.appendChild(el('b', null, '兩邊裝備件數差距大'));
+    warn.appendChild(el('div', null,
+      a.name + '「' + a.setLabel + '」' + a.count + ' 件　vs　'
+      + b.name + '「' + b.setLabel + '」' + b.count + ' 件。'));
+    warn.appendChild(el('div', null,
+      '「目前穿戴」包含圖騰、拼圖、寶石等不受預設組管理的欄位，'
+      + '拿它跟預設組相比，總和類的數字不對等。逐格比對仍然有意義。'));
+    out.appendChild(warn);
+  }
 
   /* ---- 兩位角色的摘要 ---- */
   const head = el('div', 'cmp-heads');
@@ -3492,6 +3544,29 @@ function cmpFillNames() {
   Array.from(set).sort().forEach((n) => dl.appendChild(new Option(n)));
 }
 
+/** 兩邊都載入後，把各自的裝備頁填進選單；只有一組時就沒必要顯示 */
+function cmpFillSets() {
+  const row = $('#cmpSetRow');
+  const pairs = [
+    [$('#cmpA').value.trim(), $('#cmpSetA')],
+    [$('#cmpB').value.trim(), $('#cmpSetB')],
+  ];
+
+  let anyChoice = false;
+  pairs.forEach(([name, sel]) => {
+    const raw = CMP_DATA[name];
+    const sets = (raw && raw.sets) || [];
+    const keep = sel.value;
+    sel.innerHTML = '';
+    sets.forEach((s) => sel.appendChild(new Option(s.label, s.key)));
+    // 換角色後舊的選擇可能不存在，存在才沿用
+    if (keep && sets.some((s) => s.key === keep)) sel.value = keep;
+    if (sets.length > 1) anyChoice = true;
+  });
+
+  row.hidden = !anyChoice;
+}
+
 function wireCompare() {
   $('#cmpForm').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -3508,6 +3583,7 @@ function wireCompare() {
       }
       box.textContent = '';
       cmpSyncCost();
+      cmpFillSets();
       cmpRender();
     } catch (err) {
       showError(box, '查詢失敗：' + err.message);
@@ -3519,6 +3595,8 @@ function wireCompare() {
 
   $('#cmpFilter').addEventListener('change', cmpRender);
   $('#cmpPair').addEventListener('change', cmpRender);
+  $('#cmpSetA').addEventListener('change', cmpRender);
+  $('#cmpSetB').addEventListener('change', cmpRender);
   ['#cmpA', '#cmpB'].forEach((sel) => {
     $(sel).addEventListener('input', cmpSyncCost);
   });

@@ -446,6 +446,20 @@ td.rank-name { font-weight: 600; }
 
 /* ---------- 裝備比對 ---------- */
 
+/* 兩邊裝備頁件數差太多時的提醒。自足樣式，不依賴其他類別 */
+.cmp-warn {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+.cmp-warn b { color: var(--warn); display: block; margin-bottom: 4px; }
+.cmp-warn div { color: var(--muted); }
+
 .cmp-heads {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
