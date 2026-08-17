@@ -59,6 +59,8 @@ a { color: var(--accent); }
   border-radius: 99px;
   white-space: nowrap;
 }
+/* JS 填入內容前它是空的，別讓空膠囊先閃一下 */
+.quota:empty { display: none; }
 .quota.warn { color: var(--warn); border-color: var(--warn); }
 .quota.bad  { color: var(--bad);  border-color: var(--bad); }
 
@@ -1481,7 +1483,11 @@ pre.raw {
   .topright { width: 100%; margin-left: 0; }
   .controls, main { padding-left: 16px; padding-right: 16px; }
   .search-card form { flex-direction: column; align-items: stretch; }
-  .search-date { flex: 1 1 auto; }
+  /* 直排之後 flex-basis 量的是「高度」不是寬度 —— 桌機版的
+     `flex: 1 1 260px` / `0 0 168px` 會把欄位撐成一大塊空白。
+     兩個都要收成 auto，讓高度回到內容決定。 */
+  .controls label.grow { flex: 0 0 auto; }
+  .search-date { flex: 0 0 auto; }
   .search-btn { width: 100%; margin-left: 0; margin-top: 4px; }
   .welcome { padding: 32px 16px 24px; }
   .welcome h2 { font-size: 19px; }
