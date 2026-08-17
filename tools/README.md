@@ -25,6 +25,7 @@ python tools/make_fixtures.py --fetch-missing
 # 2. 掃版面
 python tools/rwd_scan.py                    # 角色查詢全部分頁，375/360/320
 python tools/rwd_scan.py --mode compare     # 裝備比對
+python tools/rwd_scan.py --mode fold        # 區塊收合與顯示開關（功能測試）
 python tools/rwd_scan.py --widths 375       # 只測一個寬度
 
 # 3. 截圖（眼睛看還是必要的，掃描器只抓得到量得出來的東西）
@@ -51,6 +52,10 @@ python tools/rwd_scan.py --shot 1 --widths 1100    # 桌機版對照
 `--mode compare` 另外會檢查兩件跟資料有關的事：各裝備頁是不是都含圖騰／
 拼圖／寶石（它們不隨分頁換裝），以及逐格比對有沒有把它們排到最後。
 
+`--mode fold` 測的是互動與狀態：點區塊標題會不會收起來、狀態有沒有寫進
+localStorage、逐格比對的三個顯示開關關掉後元素是不是真的消失。這類功能
+壞掉時畫面照樣渲染，光看截圖看不出來。
+
 ## 兩個踩過的坑
 
 **Chrome 的 `--window-size` 不是版面寬度。** 它指定的是外框，實際 CSS 寬度
@@ -61,6 +66,11 @@ python tools/rwd_scan.py --shot 1 --widths 1100    # 桌機版對照
 **驗證指標要選對。** 曾經拿「僅一方持有」的註記當指標，但那個註記只有
 「同一件裝備對比」模式會產生，在預設模式下量到的永遠是 0 —— 看起來通過，
 其實什麼都沒驗到。現在改用 `.cmp-none`（未裝備）計數，三種配對模式都適用。
+
+同樣的坑會反方向咬人：`--mode fold` 一開始拿同一隻角色跟自己比，每格
+都相同就不會產生 `.swap-metrics`，開關測試量到 0 個元素，誤報成功能壞掉。
+現在會先把 B 側換成另一組裝備頁製造出差異，而且量到 0 個元素時回報
+「無法判定」而不是失敗。
 
 ## 檔案
 

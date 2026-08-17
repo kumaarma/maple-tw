@@ -812,6 +812,77 @@ td.rank-name { font-weight: 600; }
   gap: 10px;
 }
 
+/* ---------- 區塊收合 ---------- */
+
+.fold-head {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border-radius: 6px;
+  padding: 2px 6px;
+  margin-left: -6px;
+}
+.fold-head:hover { color: var(--text); background: rgba(255, 154, 60, .08); }
+.fold-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* 三角形指向下＝展開，指向右＝收起 */
+.fold-head::before {
+  content: '';
+  flex: none;
+  width: 0; height: 0;
+  border-left: 5px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transform: rotate(90deg);
+  transition: transform .12s ease;
+}
+.fold.closed .fold-head::before { transform: rotate(0deg); }
+.fold.closed .fold-body { display: none; }
+
+/* 收起來的區塊標題留一點呼吸空間，否則會全部黏成一團 */
+.fold.closed { margin-bottom: 6px; }
+
+/* 不加下邊距 —— 後面第一個 .section-title 自己就有 22px 上邊距 */
+.fold-all { display: flex; gap: 14px; margin: 6px 0 0; }
+.linkish {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.linkish:hover { color: var(--accent); filter: none; }
+
+/* ---------- 逐格比對的顯示開關 ---------- */
+
+.chks { align-items: center; }
+.chks-label {
+  font-size: 11.5px;
+  color: var(--muted);
+  letter-spacing: .4px;
+}
+.chk {
+  display: flex !important;      /* 蓋掉 .board-tools label 的直排 */
+  flex-direction: row !important;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  cursor: pointer;
+  user-select: none;
+}
+.chk input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+
+#cmpResult.hide-pot .cmp-pot { display: none; }
+#cmpResult.hide-swap .swap-metrics,
+#cmpResult.hide-swap .swap-unparsed { display: none; }
+#cmpResult.hide-tail .cmp-row-tail { display: none; }
+
 .kv {
   background: var(--card);
   border: 1px solid var(--line);

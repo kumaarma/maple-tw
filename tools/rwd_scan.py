@@ -115,7 +115,7 @@ def extract_diag(dom_bytes):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", default="tabs", choices=["tabs", "compare"])
+    ap.add_argument("--mode", default="tabs", choices=["tabs", "compare", "fold"])
     ap.add_argument("--widths", default="375,360,320",
                     help="CSS 寬度，逗號分隔。320 是最窄的實機，360 是多數 Android")
     ap.add_argument("--shot", type=int, default=None,

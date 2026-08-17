@@ -4,6 +4,7 @@
  *   #mode=tabs           角色查詢：依序點過每個分頁，各掃一次版面
  *   #mode=tab&i=1        只切到第 i 個分頁並停住（給截圖用）
  *   #mode=compare        裝備比對：三種配對模式的列順序與裝備頁內容
+ *   #mode=fold           區塊收合與比對頁的顯示開關
  *
  * 結果寫進 #diag，由 runner.html 輪詢取走。
  */
@@ -136,6 +137,99 @@
 
   /* ================================================================ */
 
+  /** 收合是有狀態的功能（會寫進 localStorage），容易默默壞掉 */
+  async function runFold() {
+    await lookup();
+    head();
+
+    var heads = $$('.panel.active .fold-head');
+    log.push('');
+    log.push('總覽分頁：可收合區塊 ' + heads.length + ' 個');
+    if (!heads.length) { log.push('  *** 沒有任何區塊被收合化 ***'); return; }
+
+    var sec = heads[0].parentElement;
+    var body = sec.querySelector('.fold-body');
+    var openH = body.getBoundingClientRect().height;
+    heads[0].click();
+    await sleep(200);
+    var closedH = body.getBoundingClientRect().height;
+    log.push('  點「' + heads[0].textContent.trim() + '」：內容高 '
+      + Math.round(openH) + ' → ' + Math.round(closedH)
+      + (closedH === 0 && openH > 0 ? '  OK' : '  *** 沒收起來 ***'));
+
+    var saved = JSON.parse(localStorage.getItem('tms.folds') || '{}');
+    var keys = Object.keys(saved);
+    log.push('  已記住的收合狀態：' + (keys.length ? keys.join('、') : '（無）')
+      + (keys.length ? '  OK' : '  *** 沒寫進 localStorage ***'));
+
+    heads[0].click();
+    await sleep(200);
+    log.push('  再點一次展開：內容高 '
+      + Math.round(body.getBoundingClientRect().height)
+      + (body.getBoundingClientRect().height > 0 ? '  OK' : '  *** 展不開 ***'));
+
+    /* ---- 比對頁的顯示開關 ---- */
+    $('.navbtn[data-view="compare"]').click();
+    $('#cmpA').value = NAME;
+    $('#cmpB').value = NAME;
+    $('#cmpForm').dispatchEvent(
+      new Event('submit', { cancelable: true, bubbles: true }));
+    for (var i = 0; i < 300; i++) {
+      if ($('#cmpResult .cmp-table')) break;
+      await sleep(50);
+    }
+    await sleep(400);
+
+    /* B 側換成別組裝備頁，兩邊才會有差異。拿同一組比的話每格都相同，
+       .swap-metrics 一個都不會產生，開關測試就會量到 0 而誤報失敗。 */
+    var selB = $('#cmpSetB');
+    var other = Array.from(selB.options).filter(function (o) {
+      return /預設 2/.test(o.textContent);
+    })[0];
+    if (other) {
+      selB.value = other.value;
+      selB.dispatchEvent(new Event('change', { bubbles: true }));
+      await sleep(700);
+    }
+
+    log.push('');
+    log.push('逐格比對的顯示開關（B 側改用預設 2，製造出實際差異）');
+    var CHECKS = [
+      ['#cmpShowPot', '.cmp-pot', '潛能明細'],
+      ['#cmpShowSwap', '.swap-metrics', '換裝細項'],
+      ['#cmpShowTail', '.cmp-row-tail', '圖騰／拼圖'],
+    ];
+    for (var c = 0; c < CHECKS.length; c++) {
+      var box = $(CHECKS[c][0]);
+      var sel = CHECKS[c][1];
+      function visible() {
+        return $$('#cmpResult ' + sel).filter(function (n) {
+          return n.getBoundingClientRect().height > 0;
+        }).length;
+      }
+      var before = visible();
+      box.checked = false;
+      box.dispatchEvent(new Event('change', { bubbles: true }));
+      await sleep(200);
+      var after = visible();
+      box.checked = true;
+      box.dispatchEvent(new Event('change', { bubbles: true }));
+      await sleep(200);
+      var back = visible();
+      var verdict;
+      if (before === 0) {
+        // 這個情境本來就沒有這種元素，測不了 —— 別當成失敗
+        verdict = '  無法判定（這個情境沒有這種元素）';
+      } else {
+        verdict = (after === 0 && back === before) ? '  OK' : '  *** 無效 ***';
+      }
+      log.push('  ' + CHECKS[c][2] + '：' + before + ' → 關 ' + after
+        + ' → 開 ' + back + verdict);
+    }
+  }
+
+  /* ================================================================ */
+
   (async function () {
     try {
       await sleep(300);
@@ -146,6 +240,7 @@
         return;
       }
       if (mode === 'compare') await runCompare();
+      else if (mode === 'fold') await runFold();
       else await runTabs();
     } catch (e) {
       log.push('ERROR ' + e.message);

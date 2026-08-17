@@ -389,6 +389,7 @@ function render(name) {
       }
       try {
         panel.appendChild(fn());
+        collapsify(panel, label);
         btn.classList.add('loaded');
       } catch (err) {
         panel.appendChild(el('div', 'err-line', '這一區渲染失敗：' + err.message));
@@ -578,6 +579,97 @@ function kvGrid(pairs) {
 }
 
 function title(text) { return el('div', 'section-title', text); }
+
+/* ================================================================== *
+ * 區塊收合
+ *
+ * 一次把所有資料攤開會很難讀（封測回饋：眼花撩亂），所以讓每個區塊
+ * 標題都能點擊折疊，並且記住使用者的選擇。
+ *
+ * 各 render 函式是把「標題、內容、標題、內容…」平舖成兄弟節點的，
+ * 沒有包容器。與其去改每一個 render，這裡在渲染完成後掃一次
+ * DOM，把標題與其後續兄弟節點收成一組。新增區塊不用另外接線。
+ * ================================================================== */
+
+const FOLD_KEY = 'tms.folds';
+
+function foldLoad() {
+  try { return JSON.parse(localStorage.getItem(FOLD_KEY) || '{}'); } catch (e) { return {}; }
+}
+
+function foldSave(key, closed) {
+  const m = foldLoad();
+  if (closed) m[key] = 1; else delete m[key];
+  try { localStorage.setItem(FOLD_KEY, JSON.stringify(m)); } catch (e) { /* 隱私模式 */ }
+}
+
+/**
+ * 把 root 底下的區塊變成可收合。
+ * scope 用來區分不同分頁的同名標題（例如各處都有「基本資訊」）。
+ */
+function collapsify(root, scope) {
+  const groups = [];
+  let cur = null;
+  Array.from(root.children).forEach((n) => {
+    if (n.classList && n.classList.contains('section-title')) {
+      cur = { head: n, body: [] };
+      groups.push(cur);
+    } else if (cur) {
+      cur.body.push(n);
+    }
+  });
+
+  const real = groups.filter((g) => g.body.length);
+  if (real.length < 2) return;   // 只有一個區塊，折了也沒意義
+
+  const closedState = foldLoad();
+  const sections = [];
+
+  real.forEach((g) => {
+    const sec = el('div', 'fold');
+    root.insertBefore(sec, g.head);      // 先卡位，再把標題與內容搬進去
+    g.head.classList.add('fold-head');
+    g.head.setAttribute('role', 'button');
+    g.head.tabIndex = 0;
+    sec.appendChild(g.head);
+
+    const body = el('div', 'fold-body');
+    g.body.forEach((n) => body.appendChild(n));
+    sec.appendChild(body);
+
+    const key = scope + '|' + g.head.textContent.trim();
+    if (closedState[key] === 1) sec.classList.add('closed');
+    sections.push(sec);
+
+    function toggle() {
+      sec.classList.toggle('closed');
+      foldSave(key, sec.classList.contains('closed'));
+    }
+    g.head.addEventListener('click', toggle);
+    g.head.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+    });
+  });
+
+  // 區塊多的時候，一個一個點太累
+  if (real.length >= 3) {
+    const bar = el('div', 'fold-all');
+    [['全部收合', true], ['全部展開', false]].forEach(([label, close]) => {
+      const b = el('button', 'linkish', label);
+      b.type = 'button';
+      b.addEventListener('click', () => {
+        sections.forEach((sec, i) => {
+          sec.classList.toggle('closed', close);
+          foldSave(scope + '|' + real[i].head.textContent.trim(), close);
+        });
+      });
+      bar.appendChild(b);
+    });
+    // 放在第一個區塊前面，而不是整個容器最上面 —— 比對頁前面還有
+    // 角色卡與警告，擺在那之前會很突兀
+    root.insertBefore(bar, sections[0]);
+  }
+}
 
 /**
  * 分頁切換器。
@@ -3282,6 +3374,38 @@ function cmpDelta(va, vb, suffix) {
   return span;
 }
 
+/* 逐格比對的資訊密度開關。潛能明細與換裝細項是最占版面的兩塊，
+   關掉之後一列就剩下「誰的什麼裝備、換過來是升還是降」。
+   用 CSS class 切，不重畫表格，所以切換是即時的。 */
+const CMP_SHOW = [
+  ['#cmpShowPot', 'hide-pot', 'tms.cmpShowPot'],
+  ['#cmpShowSwap', 'hide-swap', 'tms.cmpShowSwap'],
+  ['#cmpShowTail', 'hide-tail', 'tms.cmpShowTail'],
+];
+
+function cmpApplyShow() {
+  const out = $('#cmpResult');
+  if (!out) return;
+  CMP_SHOW.forEach(([sel, cls, key]) => {
+    const box = $(sel);
+    if (!box) return;
+    out.classList.toggle(cls, !box.checked);
+    try { localStorage.setItem(key, box.checked ? '1' : '0'); } catch (e) { /* 隱私模式 */ }
+  });
+}
+
+function cmpWireShow() {
+  CMP_SHOW.forEach(([sel, , key]) => {
+    const box = $(sel);
+    if (!box) return;
+    let v = null;
+    try { v = localStorage.getItem(key); } catch (e) { /* 隱私模式 */ }
+    if (v !== null) box.checked = v === '1';
+    box.addEventListener('change', cmpApplyShow);
+  });
+  cmpApplyShow();
+}
+
 function cmpRender() {
   const out = $('#cmpResult');
   out.innerHTML = '';
@@ -3540,6 +3664,8 @@ function cmpRender() {
     tally[swap.verdict]++;
 
     const tr = el('tr');
+    // 標記起來，讓「圖騰／拼圖」的顯示開關能純用 CSS 切換，免得重畫
+    if (cmpIsTail(row)) tr.classList.add('cmp-row-tail');
     const nameTd = el('td', 'rank-name');
     nameTd.appendChild(document.createTextNode(row.label));
     if (row.note) nameTd.appendChild(el('small', 'cmp-note', row.note));
@@ -3575,6 +3701,7 @@ function cmpRender() {
 
   if (!shown) {
     out.appendChild(el('div', 'empty', '這個篩選條件下沒有可顯示的欄位。'));
+    collapsify(out, 'cmp');
     return;
   }
 
@@ -3590,6 +3717,9 @@ function cmpRender() {
     + '潛能在 API 裡是文字，本站以「名稱 +數值單位」的格式解析，'
     + '標「潛·」的就是潛能項目；百分比與固定值分開計算，不會混加。'
     + '「以角色等級為準每9級 INT」這類條件式詞條維持原樣單獨計，不換算成實際數值。'));
+
+  collapsify(out, 'cmp');
+  cmpApplyShow();
 }
 
 function cmpSyncCost() {
@@ -3659,6 +3789,7 @@ function wireCompare() {
     }
   });
 
+  cmpWireShow();
   $('#cmpFilter').addEventListener('change', cmpRender);
   $('#cmpPair').addEventListener('change', cmpRender);
   $('#cmpSetA').addEventListener('change', cmpRender);
