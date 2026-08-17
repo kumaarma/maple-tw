@@ -201,13 +201,21 @@ function refreshQuota() {
     try {
       const s = await (await apiFetch('status')).json();
       const box = $('#quota');
+
+      // 金鑰／封測碼有沒有過關 —— 這個提示兩種模式都要留
+      $('#keyBtn').classList.toggle('no-key', !s.has_key);
+
+      /* 配額只對「跑本機代理的人」有意義：他自己在燒自己的每日額度。
+         線上封測版的金鑰在 Worker 端，前端問到的一律是 0 / 0，
+         顯示出來只會讓測試者以為壞掉，所以整顆徽章不出現。 */
+      if (HOSTED) { box.hidden = true; return; }
+
+      box.hidden = false;
       if (!s.has_key) {
         box.textContent = '未設 API 金鑰';
         box.className = 'quota bad';
-        $('#keyBtn').classList.add('no-key');
         return;
       }
-      $('#keyBtn').classList.remove('no-key');
       const pct = s.quota_budget ? (s.quota_used / s.quota_budget) : 0;
       box.textContent = 'API ' + s.quota_used + ' / ' + s.quota_budget;
       box.className = 'quota' + (pct > 0.85 ? ' bad' : (pct > 0.6 ? ' warn' : ''));
@@ -3711,12 +3719,17 @@ async function refreshKeyState() {
     const box = $('#keyState');
     if (s.has_key) {
       box.className = 'key-state ok';
-      box.textContent = '目前金鑰：' + s.key_hint + '（' + s.key_tier
-                      + '，來源 ' + s.source + '）　今日已用 '
-                      + s.quota_used + ' / ' + s.quota_budget;
+      /* 線上模式：不報配額（一律 0 / 0），也不報金鑰前綴 ——
+         測試者不需要知道伺服器端金鑰長什麼樣子。 */
+      box.textContent = HOSTED
+        ? '封測碼有效，可以開始查詢。'
+        : '目前金鑰：' + s.key_hint + '（' + s.key_tier
+          + '，來源 ' + s.source + '）　今日已用 '
+          + s.quota_used + ' / ' + s.quota_budget;
     } else {
       box.className = 'key-state bad';
-      box.textContent = '尚未設定金鑰，查詢會失敗。';
+      box.textContent = HOSTED ? '尚未輸入封測碼，查詢會失敗。'
+                               : '尚未設定金鑰，查詢會失敗。';
     }
     return s.has_key;
   } catch (e) {
@@ -3826,6 +3839,9 @@ function wireKeyModal() {
     if (inp) inp.placeholder = '輸入封測碼（半形英數字）';
     const cc = $('#cacheClear');
     if (cc) cc.hidden = true;
+    // 先藏起來，別等 status 回來才閃一下
+    const q = $('#quota');
+    if (q) q.hidden = true;
   }
 
   const openModal = wireKeyModal();
@@ -3860,7 +3876,9 @@ function wireKeyModal() {
     const s = $('#status');
     s.className = 'status info';
     s.innerHTML = '';
-    s.appendChild(document.createTextNode('⚠ 尚未設定 API 金鑰，無法查詢角色 — '));
+    s.appendChild(document.createTextNode(HOSTED
+      ? '⚠ 尚未輸入封測碼，無法查詢角色 — '
+      : '⚠ 尚未設定 API 金鑰，無法查詢角色 — '));
     const a = el('a', null, '點此設定');
     a.href = '#';
     a.addEventListener('click', (ev) => { ev.preventDefault(); openModal(); });
