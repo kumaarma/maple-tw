@@ -2852,6 +2852,24 @@ const CMP_GROUPS = [
   ['拼圖', /^拼圖\d*$/],
 ];
 
+/* 圖騰與拼圖不在主裝備視窗裡（裝備分頁也不管理它們），數量又多
+   —— 一個角色可以有 12 塊拼圖。夾在中間會把真正想看的武器、防具
+   推到很下面，所以不管哪種配對模式，一律排到表格最後。 */
+const CMP_TAIL = /^(圖騰|拼圖)\d*$/;
+
+function cmpIsTail(row) {
+  const slot = (row.ia && row.ia.item_equipment_slot)
+            || (row.ib && row.ib.item_equipment_slot) || '';
+  if (CMP_TAIL.test(slot)) return true;
+  // 「圖騰 #1」「圖騰1 ↔ 圖騰2」這類合成標籤取第一段就夠判斷
+  return CMP_TAIL.test(String(row.label || '').split(' ')[0]);
+}
+
+/** 穩定分割：非尾端的維持原順序，尾端的接在後面 */
+function cmpTailLast(rows) {
+  return rows.filter((r) => !cmpIsTail(r)).concat(rows.filter(cmpIsTail));
+}
+
 /** 排序鍵：主屬性優先，同分再看主攻擊。兩者都是可直接比大小的數字。 */
 function cmpItemScore(it, prof) {
   if (!it) return -1;
@@ -2964,7 +2982,7 @@ function cmpPairs(a, b, prof, mode) {
         });
       });
 
-    return rows;
+    return cmpTailLast(rows);
   }
 
   if (mode === 'value') {
@@ -3018,7 +3036,7 @@ function cmpPairs(a, b, prof, mode) {
     rows.push({ label: slot, ia: ia || null, ib: ib || null });
   });
 
-  return rows;
+  return cmpTailLast(rows);
 }
 
 /** 兩邊欄位聯集，依裝備欄版面的順序排 */
