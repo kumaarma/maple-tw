@@ -1496,7 +1496,13 @@ pre.raw {
 
   /* 卡片格線：290px 的下限在 360px 寬的手機上會擠到邊，放寬一點 */
   .items { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
-  .grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  /* align-items 預設 stretch：欄位一窄，同列只要有一張卡的文字很長，
+     旁邊那張「增加STR 80」就會被拉成一個幾乎全空的高盒子。
+     改成 start，每張卡只佔自己需要的高度。 */
+  .grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    align-items: start;
+  }
   .icards { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
   .pet-body { grid-template-columns: 1fr; }
 
@@ -1515,9 +1521,20 @@ pre.raw {
   .chip-go { padding: 8px 6px 8px 14px; }
   .navbtn { padding: 8px 14px; }
 
-  /* 裝備欄與聯盟版圖本來就有橫向捲動的容器，這裡只確保不被裁掉 */
-  .eqgrid { padding: 8px; gap: 4px; }
+  /* 裝備欄與聯盟版圖本來就有橫向捲動的容器，這裡只確保不被裁掉。
+     另外，裝備視窗中央那欄是角色圖、橫跨六列 —— 手機上會變成一塊
+     330px 的空白，而同一張圖在上方角色卡已經有了。把第三欄收成 0
+     讓四欄裝備格變大（更好按），格子位置仍照遊戲內排列。 */
+  .eqgrid {
+    padding: 8px;
+    gap: 4px;
+    grid-template-columns: 1fr 1fr 0 1fr 1fr;
+  }
+  .eqpreview { display: none; }
   .eqrow { grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); }
+
+  /* 原始資料的端點選單，選項字串很長會撐出畫面 */
+  .raw-pick select { max-width: 100%; }
 
   /* 卡片內的控制列：下拉選單的選項文字很長（例如「同類欄位依名稱
      配對（戒指／墜飾等）」），橫排會被擠爆，改成一行一個 */
