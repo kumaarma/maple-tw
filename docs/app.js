@@ -622,6 +622,26 @@ function presetLabels(count, activeNo, prefix) {
   }
   return out;
 }
+/**
+ * 圖騰、拼圖、寶石這類欄位不受裝備分頁管理 —— 遊戲裡切分頁不會把它們
+ * 換掉，但 API 的 item_equipment_preset_N 陣列裡也不會有。結果就是選了
+ * 預設組之後這些裝備整批消失（實測是 16 個欄位）。
+ *
+ * 這裡回傳「目前穿戴」裡屬於這類的裝備，好併回各預設組。
+ *
+ * 判斷方式是「三組預設都沒出現過這個欄位」，而不是寫死圖騰/拼圖/寶石
+ * 的清單 —— 某一組剛好沒穿副武器，不代表副武器不受分頁管理；反過來
+ * 日後遊戲新增別的不受管理欄位，這裡也不用改。
+ */
+function presetFixedItems(current, presetArrays) {
+  const managed = new Set();
+  (presetArrays || []).forEach((arr) => {
+    (arr || []).forEach((it) => managed.add(it.item_equipment_slot));
+  });
+  if (!managed.size) return [];   // 沒有任何預設組資料就無從判斷
+  return (current || []).filter((it) => !managed.has(it.item_equipment_slot));
+}
+
 function frag() { return document.createDocumentFragment(); }
 
 function errLine(key) {
@@ -1128,12 +1148,17 @@ function renderEquip() {
   }
 
   /* 目前穿戴之外，API 另外回傳三組預設，實測三組內容都不一樣 */
+  const presetArrays = [1, 2, 3].map((i) => {
+    const arr = equip['item_equipment_preset_' + i];
+    return (Array.isArray(arr) && arr.length) ? arr : null;
+  });
+  // 圖騰、拼圖、寶石不隨分頁換裝，補回各預設組，否則切過去會整批不見
+  const fixed = presetFixedItems(equip.item_equipment, presetArrays.filter(Boolean));
+
   const defs = [{ label: '目前穿戴', build: () => equipContent(equip.item_equipment) }];
   presetLabels(3, equip.preset_no).forEach((label, i) => {
-    const arr = equip['item_equipment_preset_' + (i + 1)];
-    if (Array.isArray(arr) && arr.length) {
-      defs.push({ label: label, build: () => equipContent(arr) });
-    }
+    const arr = presetArrays[i];
+    if (arr) defs.push({ label: label, build: () => equipContent(arr.concat(fixed)) });
   });
   f.appendChild(presetTabs(defs, 0));
 
@@ -2737,22 +2762,30 @@ async function cmpFetch(name) {
   const s = stat.ok ? stat.data : {};
   const eq = equip.ok ? equip.data : {};
 
-  /* 保留所有裝備頁，讓比對時可以切換 —— 有些角色目前穿戴的不是最強的那套。
-     注意「目前穿戴」含圖騰、拼圖等不受預設組管理的欄位，件數會比預設組多。 */
-  const sets = [];
-  if (Array.isArray(eq.item_equipment) && eq.item_equipment.length) {
-    sets.push({ key: 'cur', label: '目前穿戴', items: eq.item_equipment });
-  }
+  /* 保留所有裝備頁，讓比對時可以切換 —— 有些角色目前穿戴的不是最強的那套。 */
+  const cur = Array.isArray(eq.item_equipment) ? eq.item_equipment : [];
+  const presetArrays = [];
   for (let i = 1; i <= 3; i++) {
     const arr = eq['item_equipment_preset_' + i];
-    if (Array.isArray(arr) && arr.length) {
-      sets.push({
-        key: 'p' + i,
-        label: '預設 ' + i + (n0(eq.preset_no) === i ? '（使用中）' : ''),
-        items: arr,
-      });
-    }
+    presetArrays.push(Array.isArray(arr) && arr.length ? arr : null);
   }
+
+  /* 圖騰、拼圖、寶石不隨分頁換裝，但 preset 陣列裡沒有它們。
+     不補回去的話，切到預設組就會整批變成「僅一方持有」。 */
+  const fixed = presetFixedItems(cur, presetArrays.filter(Boolean));
+
+  const sets = [];
+  if (cur.length) {
+    sets.push({ key: 'cur', label: '目前穿戴', items: cur });
+  }
+  presetArrays.forEach((arr, i) => {
+    if (!arr) return;
+    sets.push({
+      key: 'p' + (i + 1),
+      label: '預設 ' + (i + 1) + (n0(eq.preset_no) === i + 1 ? '（使用中）' : ''),
+      items: arr.concat(fixed),
+    });
+  });
 
   /* final_stat 有四十幾項，全部留著 —— 這是解釋戰鬥力差距的關鍵，
      而且資料已經抓回來了，不留等於白丟。 */
@@ -3259,8 +3292,8 @@ function cmpRender() {
   const b = cmpSide(nameB, $('#cmpSetB'));
   if (!a || !b) return;
 
-  /* 「目前穿戴」含圖騰、拼圖等不受預設組管理的欄位，件數會比預設組多。
-     兩邊挑到件數差很多的組合時，總和類的比較就不對等，要講清楚。 */
+  /* 兩邊挑到件數差很多的組合時，總和類的比較就不對等，要講清楚。
+     圖騰／拼圖／寶石已在 cmpFetch 併回各預設組，不再是差距來源。 */
   if (Math.abs(a.count - b.count) >= 5) {
     const warn = el('div', 'cmp-warn');
     warn.appendChild(el('b', null, '兩邊裝備件數差距大'));
@@ -3268,8 +3301,9 @@ function cmpRender() {
       a.name + '「' + a.setLabel + '」' + a.count + ' 件　vs　'
       + b.name + '「' + b.setLabel + '」' + b.count + ' 件。'));
     warn.appendChild(el('div', null,
-      '「目前穿戴」包含圖騰、拼圖、寶石等不受預設組管理的欄位，'
-      + '拿它跟預設組相比，總和類的數字不對等。逐格比對仍然有意義。'));
+      '件數差這麼多時，星力總和、卷軸平均這類「全身加總」的數字不對等，'
+      + '看逐格比對比較準。'
+      + '（圖騰、拼圖、寶石不隨分頁換裝，已自動併入各預設組，不是差距來源。）'));
     out.appendChild(warn);
   }
 
