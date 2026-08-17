@@ -3168,8 +3168,13 @@ const CMP_VERDICT = {
 };
 
 /** 一方的裝備格內容（圖示、名稱、星力、潛能） */
-function cmpItemCell(it, prof) {
+/**
+ * 比對表的一格。lab 會寫進 data-lab —— 手機版把表格拆成直式卡片後
+ * 表頭就看不到了，靠這個標籤才知道這格是誰的裝備。
+ */
+function cmpItemCell(it, prof, lab) {
   const td = el('td');
+  if (lab) td.dataset.lab = lab;
   if (!it) {
     td.appendChild(el('span', 'cmp-none', '未裝備'));
     return td;
@@ -3487,10 +3492,11 @@ function cmpRender() {
     nameTd.appendChild(document.createTextNode(row.label));
     if (row.note) nameTd.appendChild(el('small', 'cmp-note', row.note));
     tr.appendChild(nameTd);
-    tr.appendChild(cmpItemCell(ia, prof));
-    tr.appendChild(cmpItemCell(ib, prof));
+    tr.appendChild(cmpItemCell(ia, prof, a.name + '（我）'));
+    tr.appendChild(cmpItemCell(ib, prof, b.name + '（對方）'));
 
     const td = el('td', 'cmp-swap');
+    td.dataset.lab = '換到我這邊';
     const [label, cls] = CMP_VERDICT[swap.verdict];
     td.appendChild(el('span', 'swap-badge ' + cls, label));
     if (swap.metrics.length) {

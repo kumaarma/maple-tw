@@ -1512,6 +1512,71 @@ pre.raw {
   /* 裝備欄與聯盟版圖本來就有橫向捲動的容器，這裡只確保不被裁掉 */
   .eqgrid { padding: 8px; gap: 4px; }
   .eqrow { grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); }
+
+  /* 卡片內的控制列：下拉選單的選項文字很長（例如「同類欄位依名稱
+     配對（戒指／墜飾等）」），橫排會被擠爆，改成一行一個 */
+  .board-tools { flex-direction: column; align-items: stretch; gap: 10px; }
+  .board-tools label { min-width: 0; }
+  .board-tools select { width: 100%; }
+
+  .topright { width: 100%; margin-left: 0; }
+  /* 分頁按鈕多一顆就會超出，讓它自己換行而不是被壓縮裁掉 */
+  .nav { flex-wrap: wrap; }
+
+  /* ---- 逐格比對：四欄表格改直式卡片 ----
+     原本靠 .tablewrap 橫向捲動，但四欄在手機上等於要左右來回拉，
+     根本沒辦法把「我的、對方的、換過來的結論」擺在一起看。
+     拆成一格一張卡，欄位名當標題，其餘三格各自標示來源。 */
+  /* 數值型表格（能力值對照、數值總和）四欄都是短數字。內距收到 9px
+     後，375px 剛好放得下九位數的戰鬥力；再長還是有 .tablewrap 可捲。 */
+  table.rank { font-size: 13px; }
+  table.rank th, table.rank td { padding: 9px; }
+
+  /* 這張表同時掛著 .rank 與 .cmp-table，而上面的 `table.rank td`
+     權重是 (0,1,2)，用 `.cmp-table td` (0,1,1) 蓋不掉 padding 與
+     框線。所以以下一律寫成 `table.rank.cmp-table …` (0,2,2)。 */
+  table.rank.cmp-table,
+  table.rank.cmp-table tbody,
+  table.rank.cmp-table tr,
+  table.rank.cmp-table td { display: block; }
+  table.rank.cmp-table { white-space: normal; }
+  table.rank.cmp-table thead { display: none; }
+
+  table.rank.cmp-table tr {
+    border-bottom: 1px solid var(--line);
+    padding: 4px 0 12px;
+  }
+  table.rank.cmp-table tbody tr:last-child { border-bottom: 0; }
+
+  table.rank.cmp-table td { border-bottom: 0; padding: 7px 14px 0; }
+
+  /* 欄位名 = 卡片標題 */
+  table.rank.cmp-table td.rank-name {
+    padding-top: 12px;
+    font-size: 14px;
+    color: var(--accent);
+    letter-spacing: .3px;
+  }
+  table.rank.cmp-table td.rank-name .cmp-note { color: var(--muted); }
+
+  /* 每格前面掛上「這是誰的」 */
+  table.rank.cmp-table td[data-lab]::before {
+    content: attr(data-lab);
+    display: block;
+    font-size: 10.5px;
+    letter-spacing: .5px;
+    color: var(--muted);
+    margin-bottom: 4px;
+    word-break: break-all;
+  }
+
+  /* 換裝評估那格在手機上不需要保底寬度，反而要能收窄 */
+  table.rank.cmp-table td.cmp-swap {
+    min-width: 0;
+    margin-top: 9px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--line);
+  }
 }
 
 /* 極窄螢幕（例如 iPhone SE 直向 375px 以下） */
