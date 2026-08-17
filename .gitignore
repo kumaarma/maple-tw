@@ -10,6 +10,11 @@ quota.json
 # wrangler 的本機快取，含 Cloudflare 帳號 ID 與帳號名稱（帳號名可能是 email）
 .wrangler/
 
+# 測試用的離線資料，從 cache.json 產生，同樣含角色資料
+tools/fixtures.js
+# 測試產生的測試頁與截圖
+tools/.work/
+
 # === 一般忽略 ===
 __pycache__/
 *.pyc
