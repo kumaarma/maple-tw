@@ -2186,6 +2186,211 @@ function renderVMatrix() {
   return f;
 }
 
+/* ---------- 六轉進度 ---------- */
+
+/** 核心滿級 */
+const HEXA_CORE_MAX = 30;
+
+/** 能力值核心的等級上限。實測 stat_grade 就是主 + 副1 + 副2 的總和（8+4+8=20） */
+const HEXA_STAT_MAX = 20;
+const HEXA_STAT_SLOTS = 3;
+
+/**
+ * 各類型核心的「應該有幾個」。
+ *
+ * API 只回已經開出來的核心，沒開的整筆不會出現，所以光看回應分不出
+ * 「4 個精通核心都滿級」與「只開了 1 個而且滿級」—— 兩者算出來都是 100%。
+ * 要算進度就得有分母，這份數量是目前台版的配置（實測 2/4/4/2，共 12 個）。
+ *
+ * 改版增減核心時改這裡。實際抓到比預期多時以實際為準，表沒跟上也不會把
+ * 進度算成超過 100%。
+ */
+const HEXA_EXPECT = { 技能核心: 2, 精通核心: 4, 強化核心: 4, 共用核心: 2 };
+
+const HEXA_TYPE_ORDER = ['技能核心', '精通核心', '強化核心', '共用核心'];
+
+function hexaTypeRank(t) {
+  const i = HEXA_TYPE_ORDER.indexOf(t);
+  return i < 0 ? 99 : i;
+}
+
+/** 等級欄位偶爾是字串，統一轉成數字，壞值算 0 */
+function lvNum(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * 算六轉進度。
+ *
+ * 分母一律用「滿級」而不是「目前總和」，沒開的核心也算進去。
+ * 回傳 { types, core, stat, low }。
+ */
+function hexaProgress(cores, stat) {
+  const byType = {};
+  const low = [];
+
+  (cores || []).forEach((c) => {
+    const t = c.hexa_core_type || '其他';
+    const g = byType[t] || (byType[t] = { type: t, have: 0, sum: 0, done: 0 });
+    const level = lvNum(c.hexa_core_level);
+    g.have += 1;
+    g.sum += Math.min(level, HEXA_CORE_MAX);
+    if (level >= HEXA_CORE_MAX) g.done += 1;
+    else low.push({ name: c.hexa_core_name, type: t, level: level });
+  });
+
+  // 預期有、但一個都還沒開的類型也要進分母，不然整類漏掉反而看不出來
+  Object.keys(HEXA_EXPECT).forEach((t) => {
+    if (!byType[t]) byType[t] = { type: t, have: 0, sum: 0, done: 0 };
+  });
+
+  const types = Object.keys(byType)
+    .sort((a, b) => hexaTypeRank(a) - hexaTypeRank(b))
+    .map((t) => {
+      const g = byType[t];
+      g.target = Math.max(HEXA_EXPECT[t] || 0, g.have);
+      g.max = g.target * HEXA_CORE_MAX;
+      return g;
+    });
+
+  const core = { sum: 0, max: 0, have: 0, target: 0, done: 0 };
+  types.forEach((g) => {
+    core.sum += g.sum; core.max += g.max;
+    core.have += g.have; core.target += g.target; core.done += g.done;
+  });
+
+  const statCores = [];
+  [['character_hexa_stat_core', 'I'],
+   ['character_hexa_stat_core_2', 'II'],
+   ['character_hexa_stat_core_3', 'III']].forEach(([key, label]) => {
+    ((stat && stat[key]) || []).forEach((c) => {
+      // 三個等級加起來才是這顆核心的進度；stat_grade 只在等級欄位缺漏時當備援
+      const bySum = lvNum(c.main_stat_level)
+                  + lvNum(c.sub_stat_level_1)
+                  + lvNum(c.sub_stat_level_2);
+      statCores.push({ label: label, sum: bySum || lvNum(c.stat_grade) });
+    });
+  });
+
+  const statSlots = Math.max(HEXA_STAT_SLOTS, statCores.length);
+  const st = {
+    cores: statCores,
+    have: statCores.length,
+    slots: statSlots,
+    sum: statCores.reduce((a, c) => a + Math.min(c.sum, HEXA_STAT_MAX), 0),
+    max: statSlots * HEXA_STAT_MAX,
+  };
+
+  low.sort((a, b) => a.level - b.level
+    || hexaTypeRank(a.type) - hexaTypeRank(b.type));
+
+  return { types: types, core: core, stat: st, low: low };
+}
+
+/** 進度條。滿了另外標 class，但滿級與否同時也有文字，不只靠顏色 */
+function hexaBar(cur, max) {
+  const bar = el('div', 'hxp-bar' + (max > 0 && cur >= max ? ' full' : ''));
+  const fill = el('i');
+  fill.style.width = (max > 0 ? Math.max(0, Math.min(100, (cur / max) * 100)) : 0) + '%';
+  bar.appendChild(fill);
+  return bar;
+}
+
+/** 差一點點時不進位到 100% —— 那會讓人以為已經滿了 */
+function hexaPct(cur, max) {
+  if (!max) return '—';
+  if (cur >= max) return '100%';
+  return Math.min(99.9, Math.round((cur / max) * 1000) / 10) + '%';
+}
+
+function hexaProgRow(name, cur, max, note) {
+  const row = el('div', 'hxp-row');
+
+  const label = el('div', 'hxp-name');
+  label.appendChild(el('span', null, name));
+  if (note) label.appendChild(el('span', 'hxp-note', note));
+  row.appendChild(label);
+
+  row.appendChild(hexaBar(cur, max));
+
+  const val = el('div', 'hxp-val');
+  val.appendChild(el('b', null, num(cur) + ' / ' + num(max)));
+  val.appendChild(el('span', null, cur >= max && max > 0 ? '滿級' : hexaPct(cur, max)));
+  row.appendChild(val);
+
+  return row;
+}
+
+function renderHexaProgress(cores, stat) {
+  const p = hexaProgress(cores, stat);
+  const f = frag();
+  f.appendChild(title('六轉進度'));
+
+  /* ---- 總計 ---- */
+  const top = el('div', 'hxp-top');
+  top.appendChild(el('div', 'hxp-pct', hexaPct(p.core.sum, p.core.max)));
+
+  const info = el('div', 'hxp-topinfo');
+  info.appendChild(el('div', 'hxp-toplabel', '核心等級'));
+  info.appendChild(el('div', 'hxp-topnum',
+    num(p.core.sum) + ' / ' + num(p.core.max) + ' 級'));
+  info.appendChild(hexaBar(p.core.sum, p.core.max));
+
+  const left = p.core.max - p.core.sum;
+  info.appendChild(el('div', 'hxp-topsub', left > 0
+    ? ('還差 ' + num(left) + ' 級　·　已滿級 ' + p.core.done + ' / ' + p.core.target + ' 個核心')
+    : ('全部 ' + p.core.target + ' 個核心都已滿級')));
+  top.appendChild(info);
+  f.appendChild(top);
+
+  /* ---- 分類 ---- */
+  const rows = el('div', 'hxp-rows');
+  p.types.forEach((g) => {
+    rows.appendChild(hexaProgRow(
+      g.type, g.sum, g.max,
+      g.have < g.target ? ('尚未開啟 ' + (g.target - g.have) + ' 個') : (g.have + ' 個')
+    ));
+  });
+
+  if (p.stat.max) {
+    rows.appendChild(hexaProgRow(
+      'HEXA 能力值', p.stat.sum, p.stat.max,
+      p.stat.have < p.stat.slots
+        ? ('尚未開啟 ' + (p.stat.slots - p.stat.have) + ' 組')
+        : (p.stat.have + ' 組')
+    ));
+  }
+  f.appendChild(rows);
+
+  /* ---- 還沒滿的核心 ---- */
+  if (p.low.length) {
+    const det = el('details', 'exp-table hxp-todo');
+    det.appendChild(el('summary', null, '未滿級核心（' + p.low.length + '）'));
+    const list = el('div', 'hxp-todolist');
+    p.low.forEach((c) => {
+      const r = el('div', 'hxp-todorow');
+      const n = el('span', 'hxp-todoname', txt(c.name));
+      n.appendChild(el('span', 'hxp-note', c.type));
+      r.appendChild(n);
+      r.appendChild(el('span', 'hxp-todolv',
+        'Lv.' + c.level + ' → ' + HEXA_CORE_MAX + '（差 ' + (HEXA_CORE_MAX - c.level) + '）'));
+      list.appendChild(r);
+    });
+    det.appendChild(list);
+    f.appendChild(det);
+  }
+
+  const notes = [
+    '進度是等級的線性比例。實際上 29→30 比 1→2 貴得多，所以這個百分比會高估後段的完成度 —— 官方 API 不提供索爾艾爾達耗量，換算不出來。',
+    '分母用的是預期核心數（' + HEXA_TYPE_ORDER.map((t) => t.replace('核心', '') + ' ' + HEXA_EXPECT[t]).join('、')
+      + '）。API 不會回傳還沒開啟的核心，沒有這個假設就無法分辨「都滿級」與「只開了一個」。',
+  ];
+  notes.forEach((t) => f.appendChild(el('p', 'hint', t)));
+
+  return f;
+}
+
 function renderHexa() {
   const f = frag();
   const hexa = d('hexa');
@@ -2193,21 +2398,23 @@ function renderHexa() {
 
   const icons = skillIconMap(['skill6']);
 
-  if (hexa && Array.isArray(hexa.character_hexa_core_equipment)
-      && hexa.character_hexa_core_equipment.length) {
+  const cores = (hexa && Array.isArray(hexa.character_hexa_core_equipment))
+    ? hexa.character_hexa_core_equipment : null;
+
+  // 進度擺最前面 —— 卡片列表看得到每個核心幾級，但看不出「離全滿還有多遠」
+  if (cores || hexaStat) f.appendChild(renderHexaProgress(cores || [], hexaStat));
+
+  if (cores && cores.length) {
 
     /* 依核心類型分組 */
     const groups = {};
-    hexa.character_hexa_core_equipment.forEach((c) => {
+    cores.forEach((c) => {
       const t = c.hexa_core_type || '其他';
       (groups[t] = groups[t] || []).push(c);
     });
 
-    const ORDER = ['技能核心', '精通核心', '強化核心', '共用核心'];
-    const types = Object.keys(groups).sort((a, b) => {
-      const ia = ORDER.indexOf(a), ib = ORDER.indexOf(b);
-      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
-    });
+    const types = Object.keys(groups)
+      .sort((a, b) => hexaTypeRank(a) - hexaTypeRank(b));
 
     types.forEach((t) => {
       f.appendChild(title('HEXA · ' + t));

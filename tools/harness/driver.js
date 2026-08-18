@@ -5,6 +5,7 @@
  *   #mode=tab&i=1        只切到第 i 個分頁並停住（給截圖用）
  *   #mode=compare        裝備比對：三種配對模式的列順序與裝備頁內容
  *   #mode=fold           區塊收合與比對頁的顯示開關
+ *   #mode=hexa           六轉進度：改寫核心等級後比對算出來的數字
  *
  * 結果寫進 #diag，由 runner.html 輪詢取走。
  */
@@ -230,6 +231,113 @@
 
   /* ================================================================ */
 
+  /**
+   * 六轉進度。fixtures 的角色核心全滿，等於只驗得到 100% 這一種情況 ——
+   * 進度算錯（例如把沒開的核心漏出分母）在滿版角色身上照樣顯示 100%。
+   * 所以先把等級改成一組手算得出答案的值，再比對畫面上的數字。
+   */
+  var HEXA_PLAN = [
+    ['技能核心', [30, 25]],
+    ['精通核心', [30, 30, 18, 7]],
+    ['強化核心', [30, 12, 0, 3]],
+    ['共用核心', [30]],          // 少放一個，測「尚未開啟」
+  ];
+  // 手算：55/60 + 85/120 + 45/120 + 30/60 = 215/360 = 59.7%，滿級 5 個，未滿 6 個
+  var HEXA_WANT = {
+    pct: '59.7%', sum: 215, max: 360, maxed: 5, unmaxed: 6, rows: 5,
+  };
+
+  /** 依 HEXA_PLAN 重寫 fixtures 裡的核心等級 */
+  function rewriteHexa() {
+    var slot = window.__FIX['character/hexamatrix'];
+    if (!slot) return null;
+    var src = (slot._ || {}).character_hexa_core_equipment || [];
+    var out = [];
+    HEXA_PLAN.forEach(function (pair) {
+      var pool = src.filter(function (c) { return c.hexa_core_type === pair[0]; });
+      pair[1].forEach(function (lv, i) {
+        var base = pool[i];
+        if (!base) return;
+        out.push(Object.assign({}, base, { hexa_core_level: lv }));
+      });
+    });
+    Object.keys(slot).forEach(function (k) {
+      if (slot[k]) slot[k].character_hexa_core_equipment = out;
+    });
+    return out;
+  }
+
+  function check(label, got, want) {
+    log.push('  ' + label + '：' + got
+      + (String(got) === String(want) ? '  OK' : '  *** 應為 ' + want + ' ***'));
+  }
+
+  async function runHexa() {
+    var cores = rewriteHexa();
+    if (!cores) { log.push('*** fixtures 沒有 character/hexamatrix ***'); return; }
+
+    await lookup();
+    head();
+
+    var tab = $$('.tab').filter(function (t) {
+      return t.textContent.trim() === 'HEXA';
+    })[0];
+    if (!tab) { log.push('*** 找不到 HEXA 分頁 ***'); return; }
+    tab.click();
+    await sleep(900);
+
+    log.push('');
+    log.push('六轉進度（核心改寫成 ' + cores.length + ' 個，'
+      + HEXA_PLAN.map(function (p) { return p[0] + ' ' + p[1].join('/'); }).join('　') + '）');
+
+    var pct = $('.panel.active .hxp-pct');
+    if (!pct) { log.push('  *** 進度區塊沒有出現 ***'); return; }
+    check('總進度', pct.textContent.trim(), HEXA_WANT.pct);
+
+    var topnum = $('.panel.active .hxp-topnum');
+    check('核心等級', topnum ? topnum.textContent.trim() : '（無）',
+      HEXA_WANT.sum + ' / ' + HEXA_WANT.max + ' 級');
+
+    var sub = $('.panel.active .hxp-topsub');
+    var txt = sub ? sub.textContent : '';
+    check('還差級數', /還差 (\S+) 級/.test(txt) ? RegExp.$1 : '（無）',
+      String(HEXA_WANT.max - HEXA_WANT.sum));
+    check('已滿級核心', /已滿級 (\d+) \/ (\d+)/.test(txt) ? RegExp.$1 + '/' + RegExp.$2 : '（無）',
+      HEXA_WANT.maxed + '/12');
+
+    var rows = $$('.panel.active .hxp-row');
+    check('分類列數（4 類 + 能力值）', rows.length, HEXA_WANT.rows);
+    rows.forEach(function (r) {
+      log.push('    ' + r.textContent.trim().replace(/\s+/g, ' '));
+    });
+
+    // 少放的那個共用核心要被指出來，否則分母錯了也看不出來
+    var missing = rows.filter(function (r) {
+      return /尚未開啟/.test(r.textContent);
+    }).length;
+    check('標出「尚未開啟」的分類', missing, 1);
+
+    var det = $('.panel.active .hxp-todo');
+    check('未滿級核心清單',
+      det ? (/未滿級核心（(\d+)）/.test(det.textContent) ? RegExp.$1 : '?') : '（無）',
+      HEXA_WANT.unmaxed);
+
+    // 展開清單再掃一次版面，收著的話裡面量不到
+    if (det) { det.open = true; await sleep(200); }
+
+    // 進度條寬度應該跟數字一致，CSS 沒接上時條會是空的
+    var fills = $$('.panel.active .hxp-bar > i').map(function (i) {
+      return i.getBoundingClientRect().width;
+    });
+    check('有寬度的進度條', fills.filter(function (w) { return w > 0; }).length,
+      fills.length);
+
+    log.push('');
+    log.push.apply(log, window.__scan('[HEXA 六轉進度]'));
+  }
+
+  /* ================================================================ */
+
   (async function () {
     try {
       await sleep(300);
@@ -241,6 +349,7 @@
       }
       if (mode === 'compare') await runCompare();
       else if (mode === 'fold') await runFold();
+      else if (mode === 'hexa') await runHexa();
       else await runTabs();
     } catch (e) {
       log.push('ERROR ' + e.message);

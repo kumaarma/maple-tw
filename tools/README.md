@@ -26,6 +26,7 @@ python tools/make_fixtures.py --fetch-missing
 python tools/rwd_scan.py                    # 角色查詢全部分頁，375/360/320
 python tools/rwd_scan.py --mode compare     # 裝備比對
 python tools/rwd_scan.py --mode fold        # 區塊收合與顯示開關（功能測試）
+python tools/rwd_scan.py --mode hexa        # 六轉進度（功能測試）
 python tools/rwd_scan.py --widths 375       # 只測一個寬度
 
 # 3. 截圖（眼睛看還是必要的，掃描器只抓得到量得出來的東西）
@@ -55,6 +56,12 @@ python tools/rwd_scan.py --shot 1 --widths 1100    # 桌機版對照
 `--mode fold` 測的是互動與狀態：點區塊標題會不會收起來、狀態有沒有寫進
 localStorage、逐格比對的三個顯示開關關掉後元素是不是真的消失。這類功能
 壞掉時畫面照樣渲染，光看截圖看不出來。
+
+`--mode hexa` 測的是算出來的數字。fixtures 那隻角色核心全滿，等於只驗得到 100%
+一種情況 —— 進度算錯（例如把還沒開啟的核心漏出分母）在滿版角色身上照樣顯示
+100%。所以會先把核心等級改寫成一組手算得出答案的值（技能 30/25、精通
+30/30/18/7、強化 30/12/0/3、共用只放 1 個），再比對畫面上的
+59.7%、215/360、還差 145 級、未滿級 6 個。
 
 ## 兩個踩過的坑
 

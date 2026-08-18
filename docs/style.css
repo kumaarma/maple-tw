@@ -1206,6 +1206,129 @@ td.rank-name { font-weight: 600; }
 .hexa-main { color: var(--text) !important; }
 .hexa-main b { color: var(--accent); }
 
+/* ---------- 六轉進度 ---------- */
+
+.hxp-top {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+.hxp-pct {
+  flex: none;
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.hxp-topinfo { flex: 1 1 auto; min-width: 0; }
+.hxp-toplabel {
+  font-size: 12px;
+  color: var(--muted);
+  letter-spacing: .4px;
+}
+.hxp-topnum {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 1px 0 7px;
+  font-variant-numeric: tabular-nums;
+}
+.hxp-topsub { font-size: 12px; color: var(--muted); margin-top: 7px; }
+
+.hxp-bar {
+  height: 8px;
+  background: #0d1017;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.hxp-bar > i { display: block; height: 100%; background: var(--accent); }
+.hxp-bar.full > i { background: var(--good); }
+
+.hxp-rows {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+.hxp-row {
+  display: grid;
+  grid-template-columns: 150px 1fr 132px;
+  align-items: center;
+  gap: 12px;
+}
+.hxp-name {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13.5px;
+}
+/* 不縮不換行 —— 讓旁邊的核心名去斷行。核心名長得多，斷在那裡比較好讀 */
+.hxp-note {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.hxp-val {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 8px;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.hxp-val > span { color: var(--muted); min-width: 42px; text-align: right; }
+
+.hxp-todolist {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 6px 14px;
+  margin-top: 8px;
+}
+.hxp-todorow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12.5px;
+  padding: 5px 10px;
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.hxp-todoname {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  word-break: break-all;
+}
+.hxp-todolv {
+  flex: none;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 窄畫面：名稱與數字同一行，進度條自己佔滿下面一整列。
+   這裡要指定格位，不能只靠 grid-column: 1/-1 —— 自動排版會把後面的
+   數字擠到第三列去。 */
+@media (max-width: 620px) {
+  .hxp-top { gap: 13px; }
+  .hxp-pct { font-size: 28px; }
+  .hxp-row {
+    grid-template-columns: 1fr auto;
+    gap: 5px 10px;
+  }
+  .hxp-name { grid-area: 1 / 1; }
+  .hxp-val  { grid-area: 1 / 2; }
+  .hxp-row > .hxp-bar { grid-area: 2 / 1 / 3 / 3; }
+}
+
 /* ---------- 原始 JSON ---------- */
 
 .raw-pick { margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
