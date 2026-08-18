@@ -243,8 +243,10 @@
     ['共用核心', [30]],          // 少放一個，測「尚未開啟」
   ];
   // 手算：55/60 + 85/120 + 45/120 + 30/60 = 215/360 = 59.7%，滿級 5 個，未滿 6 個
+  // 材料：6 顆未滿的核心 + 少放的那 1 個共用核心從 0 起算 = 706 / 20,614
   var HEXA_WANT = {
     pct: '59.7%', sum: 215, max: 360, maxed: 5, unmaxed: 6, rows: 5,
+    erda: '706', frag: '20,614',
   };
 
   /** 依 HEXA_PLAN 重寫 fixtures 裡的核心等級 */
@@ -316,6 +318,13 @@
       return /尚未開啟/.test(r.textContent);
     }).length;
     check('標出「尚未開啟」的分類', missing, 1);
+
+    var needs = $$('.panel.active .hxp-need-item b').map(function (b) {
+      return b.textContent.trim();
+    });
+    check('還差靈魂艾爾達', needs[0] || '（無）', HEXA_WANT.erda);
+    check('還差碎片', needs[1] || '（無）', HEXA_WANT.frag);
+    check('沒有費用表的核心', $('.panel.active .hxp-need-warn') ? '有' : '無', '無');
 
     var det = $('.panel.active .hxp-todo');
     check('未滿級核心清單',

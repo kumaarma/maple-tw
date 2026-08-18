@@ -2207,6 +2207,45 @@ const HEXA_STAT_SLOTS = 3;
  */
 const HEXA_EXPECT = { 技能核心: 2, 精通核心: 4, 強化核心: 4, 共用核心: 2 };
 
+/**
+ * 升一級要花多少（靈魂艾爾達, 靈魂艾爾達碎片）。索引 i＝第 i 級升到 i+1 級，
+ * 所以 [0] 是還沒開啟的核心要付的開啟費用。
+ *
+ * 數字來自 MapleStory Wiki 的 HEXA Matrix 頁。抽查對得上兩個獨立來源：
+ * 技能核心 29→30 是 20 艾爾達 + 500 碎片（台版討論串），5 轉共用強化核心
+ * 0→30 合計 137 / 4,035（namu wiki）。
+ *
+ * 官方 API 不回傳耗量，只回等級，所以這張表是寫死的；改版調整費用時要跟著改。
+ */
+const HEXA_COST = {
+  /* 起源與昇華除了 0→1 的開啟費用之外每一級都一樣，這裡取昇華的開啟費用：
+     起源是免費的而且人人都有，缺的那個必然是昇華。 */
+  技能核心: [
+  [5,100],[1,30],[1,35],[1,40],[2,45],[2,50],[2,55],[3,60],[3,65],[10,200],
+  [3,80],[3,90],[4,100],[4,110],[4,120],[4,130],[4,140],[4,150],[5,160],
+  [15,350],[5,170],[5,180],[5,190],[5,200],[5,210],[6,220],[6,230],[6,240],
+  [7,250],[20,500],
+  ],
+  精通核心: [
+  [3,50],[1,15],[1,18],[1,20],[1,23],[1,25],[1,28],[2,30],[2,33],[5,100],
+  [2,40],[2,45],[2,50],[2,55],[2,60],[2,65],[2,70],[2,75],[3,80],[8,175],
+  [3,85],[3,90],[3,95],[3,100],[3,105],[3,110],[3,115],[3,120],[4,125],
+  [10,250],
+  ],
+  強化核心: [
+  [4,75],[1,23],[1,27],[1,30],[2,34],[2,38],[2,42],[3,45],[3,49],[8,150],
+  [3,60],[3,68],[3,75],[3,83],[3,90],[3,98],[3,105],[3,113],[4,120],
+  [12,263],[4,128],[4,135],[4,143],[4,150],[4,158],[5,165],[5,173],[5,180],
+  [6,188],[15,375],
+  ],
+  共用核心: [
+  [7,125],[2,38],[2,44],[2,50],[3,57],[3,63],[3,69],[5,75],[5,82],[14,300],
+  [5,110],[5,124],[6,138],[6,152],[6,165],[6,179],[6,193],[6,207],[7,220],
+  [17,525],[7,234],[7,248],[7,262],[7,275],[7,289],[9,303],[9,317],[9,330],
+  [10,344],[20,750],
+  ],
+};
+
 const HEXA_TYPE_ORDER = ['技能核心', '精通核心', '強化核心', '共用核心'];
 
 function hexaTypeRank(t) {
@@ -2218,6 +2257,18 @@ function hexaTypeRank(t) {
 function lvNum(v) {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * 從 level 升到滿級還要花多少。未知核心類型沒有費用表，回 null。
+ */
+function hexaRemain(type, level) {
+  const tbl = HEXA_COST[type];
+  if (!tbl) return null;
+  const from = Math.max(0, Math.min(lvNum(level), HEXA_CORE_MAX));
+  let erda = 0, frag = 0;
+  for (let i = from; i < tbl.length; i++) { erda += tbl[i][0]; frag += tbl[i][1]; }
+  return { erda: erda, frag: frag };
 }
 
 /**
@@ -2237,7 +2288,8 @@ function hexaProgress(cores, stat) {
     g.have += 1;
     g.sum += Math.min(level, HEXA_CORE_MAX);
     if (level >= HEXA_CORE_MAX) g.done += 1;
-    else low.push({ name: c.hexa_core_name, type: t, level: level });
+    else low.push({ name: c.hexa_core_name, type: t, level: level,
+                   need: hexaRemain(t, level) });
   });
 
   // 預期有、但一個都還沒開的類型也要進分母，不然整類漏掉反而看不出來
@@ -2254,10 +2306,25 @@ function hexaProgress(cores, stat) {
       return g;
     });
 
-  const core = { sum: 0, max: 0, have: 0, target: 0, done: 0 };
+  const core = { sum: 0, max: 0, have: 0, target: 0, done: 0,
+                 erda: 0, frag: 0, unknown: 0 };
   types.forEach((g) => {
     core.sum += g.sum; core.max += g.max;
     core.have += g.have; core.target += g.target; core.done += g.done;
+  });
+
+  /* 還差多少材料。已開啟的核心從目前等級往上加，還沒開啟的從 0 起算
+     —— 開啟費用（費用表的 [0]）也是要付的。 */
+  low.forEach((c) => {
+    if (c.need) { core.erda += c.need.erda; core.frag += c.need.frag; }
+    else core.unknown += 1;
+  });
+  types.forEach((g) => {
+    const missing = g.target - g.have;
+    if (missing <= 0) return;
+    const need = hexaRemain(g.type, 0);
+    if (need) { core.erda += need.erda * missing; core.frag += need.frag * missing; }
+    else core.unknown += missing;
   });
 
   const statCores = [];
@@ -2363,6 +2430,24 @@ function renderHexaProgress(cores, stat) {
   }
   f.appendChild(rows);
 
+  /* ---- 還差多少材料 ---- */
+  if (p.core.erda || p.core.frag) {
+    const need = el('div', 'hxp-need');
+    need.appendChild(el('span', 'hxp-need-label', '還差'));
+    [['靈魂艾爾達', p.core.erda], ['碎片', p.core.frag]].forEach(([k, v]) => {
+      const cell = el('div', 'hxp-need-item');
+      cell.appendChild(el('span', 'k', k));
+      cell.appendChild(el('b', null, num(v)));
+      need.appendChild(cell);
+    });
+    // 未知類型沒有費用表，寧可講明白也不要讓總數看起來是全部
+    if (p.core.unknown) {
+      need.appendChild(el('div', 'hxp-need-warn',
+        '（不含 ' + p.core.unknown + ' 個沒有費用表的核心）'));
+    }
+    f.appendChild(need);
+  }
+
   /* ---- 還沒滿的核心 ---- */
   if (p.low.length) {
     const det = el('details', 'exp-table hxp-todo');
@@ -2373,20 +2458,18 @@ function renderHexaProgress(cores, stat) {
       const n = el('span', 'hxp-todoname', txt(c.name));
       n.appendChild(el('span', 'hxp-note', c.type));
       r.appendChild(n);
-      r.appendChild(el('span', 'hxp-todolv',
-        'Lv.' + c.level + ' → ' + HEXA_CORE_MAX + '（差 ' + (HEXA_CORE_MAX - c.level) + '）'));
+      const right = el('span', 'hxp-todolv',
+        'Lv.' + c.level + ' → ' + HEXA_CORE_MAX);
+      if (c.need) {
+        right.appendChild(el('span', 'hxp-note',
+          '艾爾達 ' + num(c.need.erda) + '　碎片 ' + num(c.need.frag)));
+      }
+      r.appendChild(right);
       list.appendChild(r);
     });
     det.appendChild(list);
     f.appendChild(det);
   }
-
-  const notes = [
-    '進度是等級的線性比例。實際上 29→30 比 1→2 貴得多，所以這個百分比會高估後段的完成度 —— 官方 API 不提供索爾艾爾達耗量，換算不出來。',
-    '分母用的是預期核心數（' + HEXA_TYPE_ORDER.map((t) => t.replace('核心', '') + ' ' + HEXA_EXPECT[t]).join('、')
-      + '）。API 不會回傳還沒開啟的核心，沒有這個假設就無法分辨「都滿級」與「只開了一個」。',
-  ];
-  notes.forEach((t) => f.appendChild(el('p', 'hint', t)));
 
   return f;
 }
