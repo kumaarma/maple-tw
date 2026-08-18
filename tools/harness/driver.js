@@ -287,6 +287,10 @@
     if (!tab) { log.push('*** 找不到 HEXA 分頁 ***'); return; }
     tab.click();
     await sleep(900);
+    // 捲到分頁區，這個模式也常拿來截圖，不捲的話只拍得到上面的角色卡
+    var wrap = $('.tabs-wrap');
+    if (wrap) window.scrollTo(0, wrap.getBoundingClientRect().top + window.scrollY - 4);
+    await sleep(200);
 
     log.push('');
     log.push('六轉進度（核心改寫成 ' + cores.length + ' 個，'
@@ -332,7 +336,11 @@
       HEXA_WANT.unmaxed);
 
     // 展開清單再掃一次版面，收著的話裡面量不到
-    if (det) { det.open = true; await sleep(200); }
+    if (det) { det.open = true; await sleep(400); }
+
+    // 圖示要跟核心卡片一樣拿得到。抓不到時 .hicon 會退成文字，量 img 才準
+    var shown = $$('.panel.active .hxp-todoname .hicon img').length;
+    check('未滿級核心的圖示', shown, HEXA_WANT.unmaxed);
 
     // 進度條寬度應該跟數字一致，CSS 沒接上時條會是空的
     var fills = $$('.panel.active .hxp-bar > i').map(function (i) {

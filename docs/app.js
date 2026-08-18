@@ -2019,18 +2019,26 @@ function iconImg(src, size, fallback) {
   return attachIcon(box, src, fallback);
 }
 
-function hexaCard(c, icons) {
-  const linked = (c.linked_skill || [])
+/** 核心連到哪些技能。欄位有時是字串，有時是 { hexa_skill_id } */
+function hexaLinkedNames(c) {
+  return (c.linked_skill || [])
     .map((l) => (typeof l === 'string' ? l : (l.hexa_skill_id || l.skill_name)))
     .filter(Boolean);
+}
 
-  // 先用核心名找圖示，找不到再退而用第一個對得上的連結技能
-  let icon = icons[c.hexa_core_name];
-  if (!icon) {
-    for (const n of linked) {
-      if (icons[n]) { icon = icons[n]; break; }
-    }
+/** 核心的圖示：先用核心名找，找不到再退而用第一個對得上的連結技能 */
+function hexaCoreIcon(c, icons) {
+  if (!c || !icons) return null;
+  if (icons[c.hexa_core_name]) return icons[c.hexa_core_name];
+  for (const n of hexaLinkedNames(c)) {
+    if (icons[n]) return icons[n];
   }
+  return null;
+}
+
+function hexaCard(c, icons) {
+  const linked = hexaLinkedNames(c);
+  const icon = hexaCoreIcon(c, icons);
 
   const card = el('div', 'item hexa-card');
   const big = el('div', 'item-icon');
@@ -2289,7 +2297,7 @@ function hexaProgress(cores, stat) {
     g.sum += Math.min(level, HEXA_CORE_MAX);
     if (level >= HEXA_CORE_MAX) g.done += 1;
     else low.push({ name: c.hexa_core_name, type: t, level: level,
-                   need: hexaRemain(t, level) });
+                   need: hexaRemain(t, level), src: c });
   });
 
   // 預期有、但一個都還沒開的類型也要進分母，不然整類漏掉反而看不出來
@@ -2389,7 +2397,7 @@ function hexaProgRow(name, cur, max, note) {
   return row;
 }
 
-function renderHexaProgress(cores, stat) {
+function renderHexaProgress(cores, stat, icons) {
   const p = hexaProgress(cores, stat);
   const f = frag();
   f.appendChild(title('六轉進度'));
@@ -2455,7 +2463,9 @@ function renderHexaProgress(cores, stat) {
     const list = el('div', 'hxp-todolist');
     p.low.forEach((c) => {
       const r = el('div', 'hxp-todorow');
-      const n = el('span', 'hxp-todoname', txt(c.name));
+      const n = el('span', 'hxp-todoname');
+      n.appendChild(iconImg(hexaCoreIcon(c.src, icons), 22));
+      n.appendChild(el('span', null, txt(c.name)));
       n.appendChild(el('span', 'hxp-note', c.type));
       r.appendChild(n);
       const right = el('span', 'hxp-todolv',
@@ -2485,7 +2495,7 @@ function renderHexa() {
     ? hexa.character_hexa_core_equipment : null;
 
   // 進度擺最前面 —— 卡片列表看得到每個核心幾級，但看不出「離全滿還有多遠」
-  if (cores || hexaStat) f.appendChild(renderHexaProgress(cores || [], hexaStat));
+  if (cores || hexaStat) f.appendChild(renderHexaProgress(cores || [], hexaStat, icons));
 
   if (cores && cores.length) {
 

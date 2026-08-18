@@ -1335,8 +1335,8 @@ td.rank-name { font-weight: 600; }
 }
 .hxp-todoname {
   display: flex;
-  align-items: baseline;
-  gap: 6px;
+  align-items: center;      /* 有圖示，改對齊中線；baseline 會讓圖示掉下去 */
+  gap: 7px;
   min-width: 0;
   word-break: break-all;
 }
