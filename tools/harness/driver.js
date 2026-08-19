@@ -6,6 +6,7 @@
  *   #mode=compare        裝備比對：三種配對模式的列順序與裝備頁內容
  *   #mode=fold           區塊收合與比對頁的顯示開關
  *   #mode=hexa           六轉進度：改寫核心等級後比對算出來的數字
+ *   #mode=single         單件試算：填數值後判定與逐項差異對不對
  *
  * 結果寫進 #diag，由 runner.html 輪詢取走。
  */
@@ -369,6 +370,129 @@
 
   /* ================================================================ */
 
+  /**
+   * 單件試算。這裡不只看版面 —— 表單填出來的數值有沒有真的走進判定，
+   * 光看截圖分不出來（畫面照樣渲染，只是判定永遠是「數值相同」）。
+   * 所以填一個已知的差值進去，比對畫面上的判定與逐項差異。
+   */
+  async function runSingle() {
+    $('.navbtn[data-view="single"]').click();
+    $('#oneName').value = NAME;
+    $('#oneForm').dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+    for (var i = 0; i < 300 && !$('#oneResult .one-form'); i++) await sleep(50);
+    await sleep(400);
+    head();
+
+    log.push('');
+    var slots = Array.from($('#oneSlot').options);
+    log.push('單件試算：可選欄位 ' + slots.length + ' 個');
+    if (!slots.length) { log.push('  *** 欄位下拉是空的 ***'); return; }
+
+    // 挑武器，那是最容易看出差別的一格；沒有就用第一個
+    var want = slots.filter(function (o) { return o.value === '武器'; })[0] || slots[0];
+    $('#oneSlot').value = want.value;
+    $('#oneSlot').dispatchEvent(new Event('change', { bubbles: true }));
+    await sleep(400);
+    log.push('  選了「' + want.value + '」');
+
+    /* ---- 一打開應該就是「數值相同」：表單以目前那件為底 ---- */
+    function verdict() {
+      var b = $('#oneResult .one-verdict .swap-badge');
+      return b ? b.textContent.trim() : '（無）';
+    }
+    check('預填後的判定（應與目前裝備相同）', verdict(), '數值相同');
+
+    // 判定只看 5 項數值 + 星力，其餘折進「其他數值」。混在一起會讓人
+    // 以為都算進去了，所以這裡要驗它們真的分開
+    var judged = $$('#oneResult .one-form > .one-grid .one-f');
+    check('判定用的數值格（主屬性、主攻擊、BOSS、無視、全屬性）', judged.length, 5);
+    check('星力在最上面那排', $$('#oneResult .one-row .one-f').length, 2);
+
+    var rest = $('#oneResult .one-rest');
+    check('其他數值折起來', rest && !rest.open ? '有且收合' : (rest ? '有但展開' : '無'),
+      '有且收合');
+    check('其他數值的欄位數', rest ? rest.querySelectorAll('.one-f').length : 0, 8);
+    check('潛能輸入格', $$('#oneResult .one-pot').length, 6);
+
+    /* ---- 改一個數字，判定要跟著變 ---- */
+    function setField(label, value) {
+      var f = $$('#oneResult .one-f').filter(function (x) {
+        var s = x.querySelector('span');
+        return s && s.textContent.trim() === label;
+      })[0];
+      if (!f) return false;
+      var inp = f.querySelector('input');
+      inp.value = value;
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+    }
+
+    function metrics() {
+      return $$('#oneResult .one-verdict .swap-m').map(function (m) {
+        return m.textContent.trim();
+      });
+    }
+
+    var starOK = setField('星力', 25);
+    await sleep(200);
+    log.push('  把星力改成 25：' + verdict() + '　' + metrics().join('、'));
+    check('改數值後判定會變', verdict() !== '數值相同' ? '有變' : '沒變', '有變');
+    check('差異裡列出星力', metrics().filter(function (m) {
+      return m.indexOf('★') === 0;
+    }).length ? '有' : '無', '有');
+
+    /* ---- 潛能：格式對的要進判定，格式錯的要標出來且不進判定 ---- */
+    function setPot(label, value) {
+      var f = $$('#oneResult .one-pot').filter(function (x) {
+        var s = x.querySelector('span');
+        return s && s.textContent.trim() === label;
+      })[0];
+      if (!f) return null;
+      var inp = f.querySelector('input');
+      inp.value = value;
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      return f;
+    }
+
+    var good = setPot('潛能 1', 'BOSS傷害 +40%');
+    await sleep(200);
+    check('看得懂的潛能有標 ✓',
+      good && /✓/.test(good.querySelector('.one-parse').textContent) ? '有' : '無', '有');
+    check('看得懂的潛能進了判定',
+      metrics().filter(function (m) { return /BOSS傷害/.test(m); }).length ? '有' : '無', '有');
+
+    var bad = setPot('潛能 2', '這不是潛能格式');
+    await sleep(200);
+    check('看不懂的潛能有標 ✗',
+      bad && /✗/.test(bad.querySelector('.one-parse').textContent) ? '有' : '無', '有');
+    check('看不懂的潛能沒進判定',
+      metrics().filter(function (m) { return /這不是潛能/.test(m); }).length, 0);
+
+    /* ---- 填回目前數值：應該回到「數值相同」 ---- */
+    var reset = $$('#oneResult .one-tools button').filter(function (b) {
+      return /填回/.test(b.textContent);
+    })[0];
+    if (reset) {
+      reset.click();
+      await sleep(400);
+      check('按「填回目前裝備的數值」', verdict(), '數值相同');
+    }
+
+    /* ---- 清空：一定會有差異（除非那件本來就全 0） ---- */
+    var clear = $$('#oneResult .one-tools button').filter(function (b) {
+      return /清空/.test(b.textContent);
+    })[0];
+    if (clear) {
+      clear.click();
+      await sleep(400);
+      log.push('  按「清空」：' + verdict());
+    }
+
+    log.push('');
+    log.push.apply(log, window.__scan('[單件試算]'));
+  }
+  /* ================================================================ */
+
   (async function () {
     try {
       await sleep(300);
@@ -381,6 +505,7 @@
       if (mode === 'compare') await runCompare();
       else if (mode === 'fold') await runFold();
       else if (mode === 'hexa') await runHexa();
+      else if (mode === 'single') await runSingle();
       else await runTabs();
     } catch (e) {
       log.push('ERROR ' + e.message);

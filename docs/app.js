@@ -3742,6 +3742,28 @@ const CMP_VERDICT = {
   same:  ['數值相同', 'same'],
 };
 
+/** 換裝評估的顯示內容：判定徽章 + 逐項差異。比對表與單件試算共用 */
+function cmpSwapNodes(swap) {
+  const f = frag();
+  const [label, cls] = CMP_VERDICT[swap.verdict];
+  f.appendChild(el('span', 'swap-badge ' + cls, label));
+
+  if (swap.metrics.length) {
+    const list = el('div', 'swap-metrics');
+    swap.metrics.forEach(([name, dd, unit, isPot]) => {
+      const m = el('span', 'swap-m ' + (dd > 0 ? 'up' : 'down') + (isPot ? ' pot' : ''));
+      m.textContent = (isPot ? '潛·' : '') + name + ' '
+        + (dd > 0 ? '+' : '') + num(dd) + unit;
+      list.appendChild(m);
+    });
+    f.appendChild(list);
+  }
+  if (swap.unparsed) {
+    f.appendChild(el('div', 'swap-unparsed', swap.unparsed + ' 條潛能無數值可比'));
+  }
+  return f;
+}
+
 /** 一方的裝備格內容（圖示、名稱、星力、潛能） */
 /**
  * 比對表的一格。lab 會寫進 data-lab —— 手機版把表格拆成直式卡片後
@@ -4107,23 +4129,7 @@ function cmpRender() {
 
     const td = el('td', 'cmp-swap');
     td.dataset.lab = '換到我這邊';
-    const [label, cls] = CMP_VERDICT[swap.verdict];
-    td.appendChild(el('span', 'swap-badge ' + cls, label));
-    if (swap.metrics.length) {
-      const list = el('div', 'swap-metrics');
-      swap.metrics.forEach(([name, dd, unit, isPot]) => {
-        const m = el('span', 'swap-m ' + (dd > 0 ? 'up' : 'down')
-          + (isPot ? ' pot' : ''));
-        m.textContent = (isPot ? '潛·' : '') + name + ' '
-          + (dd > 0 ? '+' : '') + num(dd) + unit;
-        list.appendChild(m);
-      });
-      td.appendChild(list);
-    }
-    if (swap.unparsed) {
-      td.appendChild(el('div', 'swap-unparsed',
-        swap.unparsed + ' 條潛能無數值可比'));
-    }
+    td.appendChild(cmpSwapNodes(swap));
     tr.appendChild(td);
     tb.appendChild(tr);
   });
@@ -4232,6 +4238,316 @@ function wireCompare() {
 
   cmpFillNames();
   cmpSyncCost();
+}
+
+/* ================================================================== *
+ * 單件試算
+ *
+ * 「這件裝備換上去到底是升是降」—— 只想比一件的時候，跑整套裝備比對
+ * 太重，而且對方的那件根本不在任何角色身上（拍賣場看到的、正在衝的）。
+ *
+ * 這裡讓使用者自己填數值，組成一個跟 API 同形狀的裝備物件，再丟給
+ * 既有的 cmpSwap() —— 判定邏輯、潛能解析、顯示全部沿用，不另寫一套。
+ * ================================================================== */
+
+/** 表單目前的內容。切換欄位會重新以該欄位的裝備填一次 */
+let ONE_DRAFT = null;
+let ONE_SLOT = '';
+
+/** 這一欄的裝備（依目前選的裝備頁） */
+function oneSide() {
+  const name = $('#oneName').value.trim();
+  if (!name || !CMP_DATA[name]) return null;
+  return cmpSide(name, $('#oneSet'));
+}
+
+/** 把角色的裝備頁與欄位填進兩個下拉 */
+function oneFillPicks(side) {
+  const setSel = $('#oneSet');
+  const raw = CMP_DATA[$('#oneName').value.trim()];
+  if (raw) {
+    const keep = setSel.value;
+    setSel.innerHTML = '';
+    (raw.sets || []).forEach((s) => {
+      const o = document.createElement('option');
+      o.value = s.key;
+      o.textContent = s.label;
+      setSel.appendChild(o);
+    });
+    if (keep && Array.from(setSel.options).some((o) => o.value === keep)) {
+      setSel.value = keep;
+    }
+  }
+
+  const slotSel = $('#oneSlot');
+  const keepSlot = slotSel.value;
+  slotSel.innerHTML = '';
+  if (side) {
+    // 用比對表那套順序，圖騰／拼圖照樣排在最後
+    cmpSlotOrder(side, side)
+      .filter((s) => side.bySlot[s])
+      .forEach((s) => {
+        const it = side.bySlot[s];
+        const o = document.createElement('option');
+        o.value = s;
+        o.textContent = s + '　' + txt(it.item_name);
+        slotSel.appendChild(o);
+      });
+  }
+  if (keepSlot && Array.from(slotSel.options).some((o) => o.value === keepSlot)) {
+    slotSel.value = keepSlot;
+  }
+  $('#onePickRow').hidden = !slotSel.options.length;
+}
+
+/** 從一件裝備抓出表單要的欄位。傳 null 就是全部歸零 */
+function oneDraftFrom(it) {
+  const d = { name: '', star: 0, opts: {}, pot: ['', '', ''], add: ['', '', ''] };
+  if (!it) {
+    CMP_SUM_FIELDS.forEach(([k]) => { d.opts[k] = 0; });
+    return d;
+  }
+  const t = it.item_total_option || {};
+  d.name = it.item_name || '';
+  d.star = n0(it.starforce);
+  CMP_SUM_FIELDS.forEach(([k]) => { d.opts[k] = n0(t[k]); });
+  for (let i = 1; i <= 3; i++) {
+    d.pot[i - 1] = it['potential_option_' + i] || '';
+    d.add[i - 1] = it['additional_potential_option_' + i] || '';
+  }
+  return d;
+}
+
+/** 表單內容 -> 跟 API 同形狀的裝備物件，好餵給既有的比對邏輯 */
+function oneDraftItem(d, slot, mine) {
+  const it = {
+    item_name: d.name || '（試算裝備）',
+    item_equipment_slot: slot,
+    item_equipment_part: slot,
+    starforce: String(d.star),
+    // 圖示沿用同欄位那件，純粹讓版面對齊；沒有也不影響比對
+    item_icon: (mine && mine.item_icon) || '',
+    item_total_option: {},
+  };
+  CMP_SUM_FIELDS.forEach(([k]) => { it.item_total_option[k] = d.opts[k] || 0; });
+  for (let i = 1; i <= 3; i++) {
+    it['potential_option_' + i] = d.pot[i - 1] || '';
+    it['additional_potential_option_' + i] = d.add[i - 1] || '';
+  }
+  return it;
+}
+
+/** 數字輸入格 */
+function oneNumField(label, value, onChange) {
+  const wrap = el('label', 'one-f');
+  wrap.appendChild(el('span', null, label));
+  const inp = document.createElement('input');
+  inp.type = 'number';
+  inp.step = 'any';
+  inp.value = String(value || 0);
+  inp.addEventListener('input', () => onChange(n0(inp.value)));
+  wrap.appendChild(inp);
+  return wrap;
+}
+
+/** 潛能輸入格。即時回報解析結果 —— 打錯格式的話這條不會計入比對 */
+function onePotField(label, value, onChange) {
+  const wrap = el('label', 'one-f one-pot');
+  wrap.appendChild(el('span', null, label));
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.value = value || '';
+  inp.placeholder = '例如：INT +10%';
+  inp.spellcheck = false;
+  wrap.appendChild(inp);
+
+  const note = el('small', 'one-parse');
+  wrap.appendChild(note);
+
+  function check() {
+    const v = inp.value.trim();
+    if (!v) { note.textContent = ''; note.className = 'one-parse'; return; }
+    const p = parsePotLine(v);
+    if (p) {
+      note.className = 'one-parse ok';
+      note.textContent = '✓ ' + p.stat + ' ' + (p.value > 0 ? '+' : '') + p.value + p.unit;
+    } else {
+      note.className = 'one-parse bad';
+      note.textContent = '✗ 格式看不懂，這條不會列入比對';
+    }
+  }
+  inp.addEventListener('input', () => { onChange(inp.value); check(); });
+  check();
+  return wrap;
+}
+
+function oneRender() {
+  const out = $('#oneResult');
+  out.innerHTML = '';
+
+  const side = oneSide();
+  if (!side) return;
+
+  const slot = $('#oneSlot').value;
+  const mine = side.bySlot[slot];
+  if (!mine) {
+    out.appendChild(el('div', 'empty', '這個欄位沒有裝備。'));
+    return;
+  }
+
+  // 換欄位就重新以那件裝備當底，不然會拿上一件的數值亂比
+  if (!ONE_DRAFT || ONE_SLOT !== slot) {
+    ONE_DRAFT = oneDraftFrom(mine);
+    ONE_SLOT = slot;
+  }
+  const d = ONE_DRAFT;
+  const prof = cmpProfile(side);
+
+  /* ---- 比對結果先擺著，表單改一個字就重畫這一塊 ---- */
+  const box = el('div', 'one-result');
+
+  function preview() {
+    const cand = oneDraftItem(d, slot, mine);
+    const swap = cmpSwap(mine, cand, prof);
+
+    box.innerHTML = '';
+    const pair = el('div', 'one-pair');
+
+    [[mine, '目前裝備'], [cand, '試算裝備']].forEach(([it, lab]) => {
+      const col = el('div', 'one-col');
+      col.appendChild(el('div', 'one-col-lab', lab));
+      // cmpItemCell 回的是 <td>，這裡只要它的內容
+      const cell = cmpItemCell(it, prof, '');
+      while (cell.firstChild) col.appendChild(cell.firstChild);
+      pair.appendChild(col);
+    });
+    box.appendChild(pair);
+
+    const verdict = el('div', 'one-verdict');
+    verdict.appendChild(el('div', 'one-col-lab',
+      '換成試算裝備（' + prof.mainLabel + ' / ' + prof.atkLabel + '）'));
+    verdict.appendChild(cmpSwapNodes(swap));
+    box.appendChild(verdict);
+  }
+
+  /* ---- 表單 ---- */
+  out.appendChild(title('要比的裝備數值　·　' + slot));
+
+  const form = el('div', 'one-form');
+
+  const head = el('div', 'one-row');
+  const nameWrap = el('label', 'one-f one-name');
+  nameWrap.appendChild(el('span', null, '裝備名稱（選填）'));
+  const nameInp = document.createElement('input');
+  nameInp.type = 'text';
+  nameInp.value = d.name;
+  nameInp.placeholder = txt(mine.item_name);
+  nameInp.spellcheck = false;
+  nameInp.addEventListener('input', () => { d.name = nameInp.value; preview(); });
+  nameWrap.appendChild(nameInp);
+  head.appendChild(nameWrap);
+  head.appendChild(oneNumField('星力', d.star, (v) => { d.star = v; preview(); }));
+  form.appendChild(head);
+
+  /* 換裝判定實際只看這幾項（見 cmpSwap）。其餘欄位填了也不會影響結果，
+     混在一起會讓人以為都算進去了，所以分開擺並講明白。 */
+  const keyed = [prof.mainKey, prof.atkKey,
+                 'boss_damage', 'ignore_monster_armor', 'all_stat'];
+
+  const nums = el('div', 'one-grid');
+  CMP_SUM_FIELDS.filter(([k]) => keyed.indexOf(k) >= 0).forEach(([k, label]) => {
+    nums.appendChild(oneNumField(label, d.opts[k], (v) => { d.opts[k] = v; preview(); }));
+  });
+  form.appendChild(nums);
+
+  const restFields = CMP_SUM_FIELDS.filter(([k]) => keyed.indexOf(k) < 0);
+  if (restFields.length) {
+    const det = el('details', 'one-rest');
+    det.appendChild(el('summary', null,
+      '其他數值（' + restFields.length + ' 項，不列入換裝判定）'));
+    const grid = el('div', 'one-grid');
+    restFields.forEach(([k, label]) => {
+      grid.appendChild(oneNumField(label, d.opts[k], (v) => { d.opts[k] = v; preview(); }));
+    });
+    det.appendChild(grid);
+    form.appendChild(det);
+  }
+
+  [['潛能', d.pot], ['附加潛能', d.add]].forEach(([label, arr]) => {
+    const sec = el('div', 'one-pots');
+    sec.appendChild(el('div', 'one-sub', label));
+    const grid = el('div', 'one-grid');
+    for (let i = 0; i < 3; i++) {
+      grid.appendChild(onePotField(label + ' ' + (i + 1), arr[i], (v) => {
+        arr[i] = v; preview();
+      }));
+    }
+    sec.appendChild(grid);
+    form.appendChild(sec);
+  });
+
+  const tools = el('div', 'one-tools');
+  const reset = el('button', 'ghost', '↺ 填回目前裝備的數值');
+  reset.type = 'button';
+  reset.addEventListener('click', () => { ONE_DRAFT = oneDraftFrom(mine); oneRender(); });
+  const clear = el('button', 'ghost', '清空');
+  clear.type = 'button';
+  clear.addEventListener('click', () => { ONE_DRAFT = oneDraftFrom(null); oneRender(); });
+  tools.appendChild(reset);
+  tools.appendChild(clear);
+  form.appendChild(tools);
+
+  out.appendChild(form);
+
+  out.appendChild(el('p', 'hint',
+    '一打開就先填好你身上那件的數值，只要改掉不一樣的地方就好。'
+    + '判定看的是主屬性、主攻擊、BOSS 傷害、無視防禦、全屬性、星力與潛能／附加潛能，'
+    + '規則與「裝備比對」完全相同 —— 折起來的那幾項 API 有給、但判定用不到，'
+    + '填了不會影響結果。'));
+
+  out.appendChild(title('比對結果'));
+  out.appendChild(box);
+
+  preview();
+  collapsify(out, 'one');
+}
+
+function wireSingle() {
+  $('#oneForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = $('#oneName').value.trim();
+    if (!name) return;
+
+    const box = $('#oneStatus');
+    $('#oneGo').disabled = true;
+    try {
+      if (!CMP_DATA[name]) {
+        spinner(box, '載入 ' + name + '…');
+        CMP_DATA[name] = await cmpFetch(name);
+      }
+      box.textContent = '';
+      box.className = 'status';
+      ONE_DRAFT = null;             // 換角色就別留著上一位的草稿
+      ONE_SLOT = '';
+      oneFillPicks(oneSide());
+      cmpFillNames();
+      oneRender();
+    } catch (err) {
+      showError(box, '查詢失敗：' + err.message);
+      $('#oneResult').innerHTML = '';
+      $('#onePickRow').hidden = true;
+    } finally {
+      $('#oneGo').disabled = false;
+    }
+  });
+
+  $('#oneSet').addEventListener('change', () => {
+    ONE_DRAFT = null;               // 換裝備頁，同欄位可能是別件裝備
+    ONE_SLOT = '';
+    oneFillPicks(oneSide());
+    oneRender();
+  });
+  $('#oneSlot').addEventListener('change', oneRender);
 }
 
 /* ================================================================== *
@@ -4479,6 +4795,7 @@ function wireKeyModal() {
 
   histRender();
   wireCompare();
+  wireSingle();
 
   // 裝備詳情：點背景或按 Esc 關閉
   $('#itemModal').addEventListener('click', (e) => {

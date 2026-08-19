@@ -20,6 +20,7 @@
   <nav class="nav">
     <button type="button" class="navbtn active" data-view="character">角色查詢</button>
     <button type="button" class="navbtn" data-view="compare">裝備比對</button>
+    <button type="button" class="navbtn" data-view="single">單件試算</button>
   </nav>
 
   <div class="topright">
@@ -133,6 +134,44 @@
   <main>
     <div id="cmpStatus" class="status"></div>
     <div id="cmpResult"></div>
+  </main>
+
+</div>
+
+<!-- ============================ 單件試算 ============================ -->
+<div id="view-single" class="view">
+
+  <section class="controls">
+    <div class="search-card">
+      <form id="oneForm" autocomplete="off">
+        <label class="grow search-name">
+          <span>角色名稱</span>
+          <input id="oneName" type="text" list="cmpNames" placeholder="輸入角色名稱" spellcheck="false" required>
+        </label>
+        <button type="submit" id="oneGo" class="search-btn">🔍 載入裝備</button>
+      </form>
+
+      <div class="board-tools" id="onePickRow" hidden>
+        <label>
+          <span>裝備頁</span>
+          <select id="oneSet"></select>
+        </label>
+        <label>
+          <span>要比的欄位</span>
+          <select id="oneSlot"></select>
+        </label>
+      </div>
+
+      <p class="hint">
+        想入手一件裝備但不確定值不值得換？填進那件的數值，直接跟你身上同欄位的比。
+        角色資料需 4 次 API（ocid、基本、能力值、裝備），與「裝備比對」共用，抓過就不再打。
+      </p>
+    </div>
+  </section>
+
+  <main>
+    <div id="oneStatus" class="status"></div>
+    <div id="oneResult"></div>
   </main>
 
 </div>
