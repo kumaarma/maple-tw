@@ -6,7 +6,6 @@
  *   #mode=compare        裝備比對：三種配對模式的列順序與裝備頁內容
  *   #mode=fold           區塊收合與比對頁的顯示開關
  *   #mode=hexa           六轉進度：改寫核心等級後比對算出來的數字
- *   #mode=single         單件試算：填數值後判定與逐項差異對不對
  *
  * 結果寫進 #diag，由 runner.html 輪詢取走。
  */
@@ -370,165 +369,6 @@
 
   /* ================================================================ */
 
-  /**
-   * 單件試算。這裡不只看版面 —— 表單填出來的數值有沒有真的走進判定，
-   * 光看截圖分不出來（畫面照樣渲染，只是判定永遠是「數值相同」）。
-   * 所以填一個已知的差值進去，比對畫面上的判定與逐項差異。
-   */
-  async function runSingle() {
-    $('.navbtn[data-view="single"]').click();
-    $('#oneName').value = NAME;
-    $('#oneForm').dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-    for (var i = 0; i < 300 && !$('#oneResult .one-form'); i++) await sleep(50);
-    await sleep(400);
-    head();
-
-    log.push('');
-    var slots = Array.from($('#oneSlot').options);
-    log.push('單件試算：可選欄位 ' + slots.length + ' 個');
-    if (!slots.length) { log.push('  *** 欄位下拉是空的 ***'); return; }
-
-    // 挑武器，那是最容易看出差別的一格；沒有就用第一個
-    var want = slots.filter(function (o) { return o.value === '武器'; })[0] || slots[0];
-    $('#oneSlot').value = want.value;
-    $('#oneSlot').dispatchEvent(new Event('change', { bubbles: true }));
-    await sleep(400);
-    log.push('  選了「' + want.value + '」');
-
-    /* ---- 預設是空表單：不該給判定，也不該冒出「試算裝備」那一欄 ---- */
-    function verdict() {
-      var b = $('#oneResult .one-verdict .swap-badge');
-      return b ? b.textContent.trim() : '（無）';
-    }
-    function filled() {
-      return $$('#oneResult .one-form input').filter(function (i) {
-        return i.value !== '';
-      }).length;
-    }
-    check('預設欄位全空', filled(), 0);
-    check('空表單不給判定', verdict(), '（無）');
-    check('空表單只顯示目前裝備', $$('#oneResult .one-col').length, 1);
-    check('空表單有提示', $('#oneResult .one-waiting') ? '有' : '無', '有');
-
-    // 判定只看 5 項數值 + 星力，其餘折進「其他數值」。混在一起會讓人
-    // 以為都算進去了，所以這裡要驗它們真的分開
-    var judged = $$('#oneResult .one-form > .one-grid .one-f');
-    check('判定用的數值格（主屬性、主攻擊、BOSS、無視、全屬性）', judged.length, 5);
-    check('星力在最上面那排', $$('#oneResult .one-row .one-f').length, 2);
-
-    var rest = $('#oneResult .one-rest');
-    check('其他數值折起來', rest && !rest.open ? '有且收合' : (rest ? '有但展開' : '無'),
-      '有且收合');
-    check('其他數值的欄位數', rest ? rest.querySelectorAll('.one-f').length : 0, 8);
-    check('潛能輸入格', $$('#oneResult .one-pot').length, 6);
-
-    /* ---- 改一個數字，判定要跟著變 ---- */
-    function setField(label, value) {
-      var f = $$('#oneResult .one-f').filter(function (x) {
-        var s = x.querySelector('span');
-        return s && s.textContent.trim() === label;
-      })[0];
-      if (!f) return false;
-      var inp = f.querySelector('input');
-      inp.value = value;
-      inp.dispatchEvent(new Event('input', { bubbles: true }));
-      return true;
-    }
-
-    function metrics() {
-      return $$('#oneResult .one-verdict .swap-m').map(function (m) {
-        return m.textContent.trim();
-      });
-    }
-
-    setField('星力', 25);
-    await sleep(200);
-    log.push('  把星力改成 25：' + verdict() + '　' + metrics().join('、'));
-    check('填了值就開始判定', verdict() !== '（無）' ? '有判定' : '沒判定', '有判定');
-    check('試算裝備那一欄出現了', $$('#oneResult .one-col').length, 2);
-    check('差異裡列出星力', metrics().filter(function (m) {
-      return m.indexOf('★') === 0;
-    }).length ? '有' : '無', '有');
-
-    /* ---- 潛能：格式對的要進判定，格式錯的要標出來且不進判定 ---- */
-    function setPot(label, value) {
-      var f = $$('#oneResult .one-pot').filter(function (x) {
-        var s = x.querySelector('span');
-        return s && s.textContent.trim() === label;
-      })[0];
-      if (!f) return null;
-      var inp = f.querySelector('input');
-      inp.value = value;
-      inp.dispatchEvent(new Event('input', { bubbles: true }));
-      return f;
-    }
-
-    var good = setPot('潛能 1', 'BOSS傷害 +40%');
-    await sleep(200);
-    check('看得懂的潛能有標 ✓',
-      good && /✓/.test(good.querySelector('.one-parse').textContent) ? '有' : '無', '有');
-    check('看得懂的潛能進了判定',
-      metrics().filter(function (m) { return /BOSS傷害/.test(m); }).length ? '有' : '無', '有');
-
-    var bad = setPot('潛能 2', '這不是潛能格式');
-    await sleep(200);
-    check('看不懂的潛能有標 ✗',
-      bad && /✗/.test(bad.querySelector('.one-parse').textContent) ? '有' : '無', '有');
-    check('看不懂的潛能沒進判定',
-      metrics().filter(function (m) { return /這不是潛能/.test(m); }).length, 0);
-
-    /* ---- 填入目前數值：等於拿自己比自己，判定必須是「數值相同」 ---- */
-    var reset = $$('#oneResult .one-tools button').filter(function (b) {
-      return /填入目前/.test(b.textContent);
-    })[0];
-    if (reset) {
-      reset.click();
-      await sleep(400);
-      check('按「填入目前裝備的數值」', verdict(), '數值相同');
-      check('填入後欄位不再是空的', filled() > 0 ? '有值' : '仍是空的', '有值');
-    }
-
-    /* ---- 從現有裝備帶入：這是能跨欄位比對的關鍵 ---- */
-    var src = $('#oneResult .one-src select');
-    check('有「從現有裝備帶入」下拉', src ? '有' : '無', '有');
-    if (src) {
-      var opts = Array.from(src.options).filter(function (o) { return o.value !== ''; });
-      log.push('  可帶入的裝備 ' + opts.length + ' 件，分 '
-        + src.querySelectorAll('optgroup').length + ' 位角色');
-
-      // 挑一件跟目前欄位不同欄位的，證明跨欄位真的能比
-      var other = opts.filter(function (o) {
-        return o.textContent.indexOf(want.value) !== 0;
-      })[0];
-      if (other) {
-        src.value = other.value;
-        src.dispatchEvent(new Event('change', { bubbles: true }));
-        await sleep(400);
-        log.push('  帶入「' + other.textContent.trim() + '」（與「'
-          + want.value + '」不同欄位）');
-        check('帶入後有判定', verdict() !== '（無）' ? '有判定' : '沒判定', '有判定');
-        check('帶入後欄位有值', filled() > 0 ? '有值' : '空的', '有值');
-      } else {
-        log.push('  *** 找不到不同欄位的裝備可帶入，跨欄位這段沒驗到 ***');
-      }
-    }
-
-    /* ---- 清空：要回到一開始那個「還沒填」的狀態 ---- */
-    var clear = $$('#oneResult .one-tools button').filter(function (b) {
-      return /清空/.test(b.textContent);
-    })[0];
-    if (clear) {
-      clear.click();
-      await sleep(400);
-      check('按「清空」後欄位全空', filled(), 0);
-      check('按「清空」後回到未填狀態', verdict(), '（無）');
-    }
-
-    log.push('');
-    log.push.apply(log, window.__scan('[單件試算]'));
-  }
-  /* ================================================================ */
-
   (async function () {
     try {
       await sleep(300);
@@ -541,7 +381,6 @@
       if (mode === 'compare') await runCompare();
       else if (mode === 'fold') await runFold();
       else if (mode === 'hexa') await runHexa();
-      else if (mode === 'single') await runSingle();
       else await runTabs();
     } catch (e) {
       log.push('ERROR ' + e.message);
