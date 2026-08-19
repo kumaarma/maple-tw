@@ -330,6 +330,20 @@
     check('還差碎片', needs[1] || '（無）', HEXA_WANT.frag);
     check('沒有費用表的核心', $('.panel.active .hxp-need-warn') ? '有' : '無', '無');
 
+    // 台版未開放的第三共用核心：要另外列，而且不能被算進上面的進度
+    var soon = $('.panel.active .hxp-soon');
+    check('未開放區塊', soon ? '有' : '無', '有');
+    if (soon) {
+      var t = soon.textContent;
+      check('未開放的追加需求',
+        /靈魂艾爾達 ([\d,]+)　碎片 ([\d,]+)/.test(t) ? RegExp.$1 + ' / ' + RegExp.$2 : '（無）',
+        '137 / 4,035');
+      check('帶出職業的技能名',
+        soon.querySelector('.hxp-soon-skill')
+          ? soon.querySelector('.hxp-soon-skill').textContent.trim() : '（無）',
+        '異界殘像 VI');
+    }
+
     var det = $('.panel.active .hxp-todo');
     check('未滿級核心清單',
       det ? (/未滿級核心（(\d+)）/.test(det.textContent) ? RegExp.$1 : '?') : '（無）',

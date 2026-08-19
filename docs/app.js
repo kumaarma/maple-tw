@@ -2268,10 +2268,89 @@ function lvNum(v) {
 }
 
 /**
+ * 台版還沒實裝、但海外版已經公布的核心。
+ *
+ * 這裡刻意跟 HEXA_EXPECT 分開放：併進預期數量的話，所有人的完成度會無故
+ * 掉一截，可是那不是他們沒練，是遊戲還沒開。所以進度與「還差」都只算現有
+ * 內容，未開放的另外列一塊。
+ *
+ * 角色身上真的出現這種核心時（台版實裝後），它就會走一般流程被算進去，
+ * 這一塊會自己消失 —— 判斷靠 commonCoreKind()，不用改程式。
+ *
+ * 費用表來自 MapleStory Wiki 的 HEXA Matrix → Common Nodes →
+ * 5th Job Common Node Boosts，0→30 合計 137 / 4,035。
+ */
+const HEXA_COMMON3_COST = [
+  [4,90],[1,25],[1,30],[1,35],[2,40],[2,45],[2,50],[3,55],[3,60],[9,180],
+  [3,73],[3,81],[3,90],[3,98],[4,107],[4,115],[4,124],[4,132],[4,141],
+  [14,315],[4,151],[5,160],[5,170],[5,179],[5,189],[5,198],[5,208],[5,217],
+  [6,227],[18,450],
+];
+
+const HEXA_UPCOMING = [{
+  type: '共用核心',
+  name: '第三共用核心',
+  note: '強化 5 轉共用技能',
+  source: '海外版 v253（2026/08/18）公布',
+  cost: HEXA_COMMON3_COST,
+}];
+
+/**
+ * 職業 -> 第三共用核心的技能名（海外版 v253）。
+ *
+ * 用正規表示式而不是完全比對：官方回的職業名各版本寫法不一（標點、
+ * 「大魔導士」之類的後綴），寫死字串很容易全部對不上。對不上就不顯示
+ * 技能名，其餘照常，所以猜錯的代價只是少一行字。
+ */
+const HEXA_COMMON3_SKILL = [
+  [/陰陽師|劍豪/,                         '綻放黎明 VI'],
+  [/墨玄|琳/,                             '輪迴 VI'],
+  [/英雄|聖騎士|黑騎士/,                   '閃擊護盾 VI'],
+  [/火.?毒|冰.?雷|主教/,                   '奧義解放 VI'],
+  [/箭神|神射手|開拓者/,                   '靈禽覺醒 VI'],
+  [/夜使者|暗影神偷|双刀|雙刀/,            '究極隱身術 VI'],
+  [/拳霸|槍神|重砲指揮官/,                 '海盜旗幟 VI'],
+  [/米哈逸|破曉者|曉之劍士|烈焰巫師|火焰巫師|風靈使者|風之射手|夜行者|閃雷悍將|雷之打手/,
+                                          '皇家騎士方陣 VI'],
+  [/阿蘭|伊班|蜜兒|幻影俠盜|隱月|路米那斯/, '佛雷德的守護 VI'],
+  [/惡魔殺手|惡魔復仇者/,                  '召喚瑪斯提馬 VI'],
+  [/爆拳槍神|戰鬥法師|狂狼勇士|傑諾|機械師/, '反抗軍列兵 VI'],
+  [/凱撒|凱因|卡蒂娜|天使破壞者/,           '萬神殿 VI'],
+  [/阿黛爾|伊利恩|卡莉|阿克/,               '魔力迴路全開 VI'],
+  [/蓮|菈菈|虎影/,                         '蓮花 VI'],
+  [/神之子/,                               '超越 VI'],
+  [/凱內西斯/,                             '異界殘像 VI'],
+];
+
+function hexaCommon3Skill(cls) {
+  if (!cls) return null;
+  for (const [re, skill] of HEXA_COMMON3_SKILL) {
+    if (re.test(cls)) return skill;
+  }
+  return null;
+}
+
+/**
+ * 共用核心有兩種，費用差很多（索爾 208/6,268、5 轉共用強化 137/4,035），
+ * 但 API 兩種都回 hexa_core_type: '共用核心'，只能靠名字分。
+ */
+function commonCoreKind(name) {
+  // 名字缺漏時當索爾 —— 分母預期的那兩顆就是索爾，猜這邊才不會把費用低估
+  if (!name) return 'sol';
+  return /雅努斯|赫卡忒|傑納斯|Janus|Hecate/i.test(name) ? 'sol' : 'boost';
+}
+
+/** 這顆核心該用哪張費用表。共用核心要再看名字分兩種 */
+function hexaCostTable(type, name) {
+  if (type === '共用核心' && commonCoreKind(name) === 'boost') return HEXA_COMMON3_COST;
+  return HEXA_COST[type] || null;
+}
+
+/**
  * 從 level 升到滿級還要花多少。未知核心類型沒有費用表，回 null。
  */
-function hexaRemain(type, level) {
-  const tbl = HEXA_COST[type];
+function hexaRemain(type, level, name) {
+  const tbl = hexaCostTable(type, name);
   if (!tbl) return null;
   const from = Math.max(0, Math.min(lvNum(level), HEXA_CORE_MAX));
   let erda = 0, frag = 0;
@@ -2285,9 +2364,17 @@ function hexaRemain(type, level) {
  * 分母一律用「滿級」而不是「目前總和」，沒開的核心也算進去。
  * 回傳 { types, core, stat, low }。
  */
-function hexaProgress(cores, stat) {
+function hexaProgress(cores, stat, cls) {
   const byType = {};
   const low = [];
+
+  /* 台版已經開了的話就走一般流程，這一塊不用再提 */
+  const opened = {};
+  (cores || []).forEach((c) => {
+    if ((c.hexa_core_type || '') === '共用核心') {
+      opened[commonCoreKind(c.hexa_core_name)] = true;
+    }
+  });
 
   (cores || []).forEach((c) => {
     const t = c.hexa_core_type || '其他';
@@ -2297,7 +2384,7 @@ function hexaProgress(cores, stat) {
     g.sum += Math.min(level, HEXA_CORE_MAX);
     if (level >= HEXA_CORE_MAX) g.done += 1;
     else low.push({ name: c.hexa_core_name, type: t, level: level,
-                   need: hexaRemain(t, level), src: c });
+                   need: hexaRemain(t, level, c.hexa_core_name), src: c });
   });
 
   // 預期有、但一個都還沒開的類型也要進分母，不然整類漏掉反而看不出來
@@ -2330,6 +2417,7 @@ function hexaProgress(cores, stat) {
   types.forEach((g) => {
     const missing = g.target - g.have;
     if (missing <= 0) return;
+    // 沒開啟的核心沒有名字可查，共用核心會落回索爾的費用表（見 commonCoreKind）
     const need = hexaRemain(g.type, 0);
     if (need) { core.erda += need.erda * missing; core.frag += need.frag * missing; }
     else core.unknown += missing;
@@ -2360,7 +2448,17 @@ function hexaProgress(cores, stat) {
   low.sort((a, b) => a.level - b.level
     || hexaTypeRank(a.type) - hexaTypeRank(b.type));
 
-  return { types: types, core: core, stat: st, low: low };
+  /* 未開放的核心。不併進 core，否則所有人的完成度會無故掉一截 */
+  const upcoming = HEXA_UPCOMING
+    .filter((u) => !(u.type === '共用核心' && opened.boost))
+    .map((u) => {
+      const erda = u.cost.reduce((a, r) => a + r[0], 0);
+      const frag = u.cost.reduce((a, r) => a + r[1], 0);
+      return { type: u.type, name: u.name, note: u.note, source: u.source,
+               skill: hexaCommon3Skill(cls), erda: erda, frag: frag };
+    });
+
+  return { types: types, core: core, stat: st, low: low, upcoming: upcoming };
 }
 
 /** 進度條。滿了另外標 class，但滿級與否同時也有文字，不只靠顏色 */
@@ -2397,8 +2495,8 @@ function hexaProgRow(name, cur, max, note) {
   return row;
 }
 
-function renderHexaProgress(cores, stat, icons) {
-  const p = hexaProgress(cores, stat);
+function renderHexaProgress(cores, stat, icons, cls) {
+  const p = hexaProgress(cores, stat, cls);
   const f = frag();
   f.appendChild(title('六轉進度'));
 
@@ -2456,6 +2554,30 @@ function renderHexaProgress(cores, stat, icons) {
     f.appendChild(need);
   }
 
+  /* ---- 台版還沒開放的核心 ---- */
+  if (p.upcoming.length) {
+    const box = el('div', 'hxp-soon');
+    box.appendChild(el('div', 'hxp-soon-label', '台版未開放'));
+
+    p.upcoming.forEach((u) => {
+      const row = el('div', 'hxp-soon-row');
+
+      const name = el('div', 'hxp-soon-name');
+      name.appendChild(el('b', null, u.type + ' · ' + u.name));
+      if (u.skill) name.appendChild(el('span', 'hxp-soon-skill', u.skill));
+      name.appendChild(el('span', 'hxp-note', u.note));
+      row.appendChild(name);
+
+      row.appendChild(el('div', 'hxp-soon-cost',
+        '開放後還要　靈魂艾爾達 ' + num(u.erda) + '　碎片 ' + num(u.frag)));
+
+      row.appendChild(el('div', 'hxp-note', u.source));
+      box.appendChild(row);
+    });
+
+    f.appendChild(box);
+  }
+
   /* ---- 還沒滿的核心 ---- */
   if (p.low.length) {
     const det = el('details', 'exp-table hxp-todo');
@@ -2495,7 +2617,13 @@ function renderHexa() {
     ? hexa.character_hexa_core_equipment : null;
 
   // 進度擺最前面 —— 卡片列表看得到每個核心幾級，但看不出「離全滿還有多遠」
-  if (cores || hexaStat) f.appendChild(renderHexaProgress(cores || [], hexaStat, icons));
+  // 職業拿來對出第三共用核心是哪個技能；basic 首屏就抓過了，不會多打 API
+  const cls = (d('basic') || {}).character_class
+    || (hexaStat && hexaStat.character_class) || '';
+
+  if (cores || hexaStat) {
+    f.appendChild(renderHexaProgress(cores || [], hexaStat, icons, cls));
+  }
 
   if (cores && cores.length) {
 
