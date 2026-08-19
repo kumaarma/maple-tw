@@ -1517,6 +1517,15 @@ td.rank-name { font-weight: 600; }
   margin-bottom: 8px;
 }
 
+.one-waiting {
+  background: var(--bg-soft);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .one-verdict {
   background: var(--card);
   border: 1px solid var(--line);

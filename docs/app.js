@@ -4300,22 +4300,32 @@ function oneFillPicks(side) {
   $('#onePickRow').hidden = !slotSel.options.length;
 }
 
-/** 從一件裝備抓出表單要的欄位。傳 null 就是全部歸零 */
+/**
+ * 表單內容。所有欄位都存字串，空字串就是「沒填」——
+ * 存 0 的話畫面上會是一排 0，看起來像已經填好了。
+ * 計算時一律過 n0()，空字串自然算成 0。
+ */
 function oneDraftFrom(it) {
-  const d = { name: '', star: 0, opts: {}, pot: ['', '', ''], add: ['', '', ''] };
-  if (!it) {
-    CMP_SUM_FIELDS.forEach(([k]) => { d.opts[k] = 0; });
-    return d;
-  }
+  const d = { name: '', star: '', opts: {}, pot: ['', '', ''], add: ['', '', ''] };
+  CMP_SUM_FIELDS.forEach(([k]) => { d.opts[k] = ''; });
+  if (!it) return d;
+
   const t = it.item_total_option || {};
   d.name = it.item_name || '';
-  d.star = n0(it.starforce);
-  CMP_SUM_FIELDS.forEach(([k]) => { d.opts[k] = n0(t[k]); });
+  d.star = String(n0(it.starforce));
+  CMP_SUM_FIELDS.forEach(([k]) => { d.opts[k] = String(n0(t[k])); });
   for (let i = 1; i <= 3; i++) {
     d.pot[i - 1] = it['potential_option_' + i] || '';
     d.add[i - 1] = it['additional_potential_option_' + i] || '';
   }
   return d;
+}
+
+/** 整份表單都還沒動過？空表單不該被判成「降級」 */
+function oneDraftEmpty(d) {
+  if (String(d.name).trim() || String(d.star).trim()) return false;
+  if (CMP_SUM_FIELDS.some(([k]) => String(d.opts[k]).trim())) return false;
+  return !d.pot.concat(d.add).some((x) => String(x).trim());
 }
 
 /** 表單內容 -> 跟 API 同形狀的裝備物件，好餵給既有的比對邏輯 */
@@ -4324,12 +4334,12 @@ function oneDraftItem(d, slot, mine) {
     item_name: d.name || '（試算裝備）',
     item_equipment_slot: slot,
     item_equipment_part: slot,
-    starforce: String(d.star),
+    starforce: String(n0(d.star)),
     // 圖示沿用同欄位那件，純粹讓版面對齊；沒有也不影響比對
     item_icon: (mine && mine.item_icon) || '',
     item_total_option: {},
   };
-  CMP_SUM_FIELDS.forEach(([k]) => { it.item_total_option[k] = d.opts[k] || 0; });
+  CMP_SUM_FIELDS.forEach(([k]) => { it.item_total_option[k] = n0(d.opts[k]); });
   for (let i = 1; i <= 3; i++) {
     it['potential_option_' + i] = d.pot[i - 1] || '';
     it['additional_potential_option_' + i] = d.add[i - 1] || '';
@@ -4344,8 +4354,9 @@ function oneNumField(label, value, onChange) {
   const inp = document.createElement('input');
   inp.type = 'number';
   inp.step = 'any';
-  inp.value = String(value || 0);
-  inp.addEventListener('input', () => onChange(n0(inp.value)));
+  inp.value = value === null || value === undefined ? '' : String(value);
+  inp.placeholder = '0';
+  inp.addEventListener('input', () => onChange(inp.value));
   wrap.appendChild(inp);
   return wrap;
 }
@@ -4395,9 +4406,9 @@ function oneRender() {
     return;
   }
 
-  // 換欄位就重新以那件裝備當底，不然會拿上一件的數值亂比
+  // 換欄位就清空重來，不然會拿上一件的數值亂比
   if (!ONE_DRAFT || ONE_SLOT !== slot) {
-    ONE_DRAFT = oneDraftFrom(mine);
+    ONE_DRAFT = oneDraftFrom(null);
     ONE_SLOT = slot;
   }
   const d = ONE_DRAFT;
@@ -4407,13 +4418,16 @@ function oneRender() {
   const box = el('div', 'one-result');
 
   function preview() {
-    const cand = oneDraftItem(d, slot, mine);
-    const swap = cmpSwap(mine, cand, prof);
-
     box.innerHTML = '';
-    const pair = el('div', 'one-pair');
+    const blank = oneDraftEmpty(d);
 
-    [[mine, '目前裝備'], [cand, '試算裝備']].forEach(([it, lab]) => {
+    /* 一片空白的表單不是一件裝備。照算會得到「全部 0」對上你身上那件，
+       判定固定是「降級」—— 那不是結論，是還沒開始填。 */
+    const sides = [[mine, '目前裝備']];
+    if (!blank) sides.push([oneDraftItem(d, slot, mine), '試算裝備']);
+
+    const pair = el('div', 'one-pair');
+    sides.forEach(([it, lab]) => {
       const col = el('div', 'one-col');
       col.appendChild(el('div', 'one-col-lab', lab));
       // cmpItemCell 回的是 <td>，這裡只要它的內容
@@ -4423,6 +4437,14 @@ function oneRender() {
     });
     box.appendChild(pair);
 
+    if (blank) {
+      box.appendChild(el('div', 'one-waiting',
+        '在上面填入要比的裝備數值，這裡會即時算出結果。'
+        + '只填你在意的幾項就好 —— 沒填的當 0。'));
+      return;
+    }
+
+    const swap = cmpSwap(mine, oneDraftItem(d, slot, mine), prof);
     const verdict = el('div', 'one-verdict');
     verdict.appendChild(el('div', 'one-col-lab',
       '換成試算裝備（' + prof.mainLabel + ' / ' + prof.atkLabel + '）'));
@@ -4487,7 +4509,7 @@ function oneRender() {
   });
 
   const tools = el('div', 'one-tools');
-  const reset = el('button', 'ghost', '↺ 填回目前裝備的數值');
+  const reset = el('button', 'ghost', '↺ 填入目前裝備的數值');
   reset.type = 'button';
   reset.addEventListener('click', () => { ONE_DRAFT = oneDraftFrom(mine); oneRender(); });
   const clear = el('button', 'ghost', '清空');
@@ -4500,7 +4522,7 @@ function oneRender() {
   out.appendChild(form);
 
   out.appendChild(el('p', 'hint',
-    '一打開就先填好你身上那件的數值，只要改掉不一樣的地方就好。'
+    '欄位預設留空，沒填的當 0。想從你身上那件改起，按「填入目前裝備的數值」。'
     + '判定看的是主屬性、主攻擊、BOSS 傷害、無視防禦、全屬性、星力與潛能／附加潛能，'
     + '規則與「裝備比對」完全相同 —— 折起來的那幾項 API 有給、但判定用不到，'
     + '填了不會影響結果。'));

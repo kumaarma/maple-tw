@@ -395,12 +395,20 @@
     await sleep(400);
     log.push('  選了「' + want.value + '」');
 
-    /* ---- 一打開應該就是「數值相同」：表單以目前那件為底 ---- */
+    /* ---- 預設是空表單：不該給判定，也不該冒出「試算裝備」那一欄 ---- */
     function verdict() {
       var b = $('#oneResult .one-verdict .swap-badge');
       return b ? b.textContent.trim() : '（無）';
     }
-    check('預填後的判定（應與目前裝備相同）', verdict(), '數值相同');
+    function filled() {
+      return $$('#oneResult .one-form input').filter(function (i) {
+        return i.value !== '';
+      }).length;
+    }
+    check('預設欄位全空', filled(), 0);
+    check('空表單不給判定', verdict(), '（無）');
+    check('空表單只顯示目前裝備', $$('#oneResult .one-col').length, 1);
+    check('空表單有提示', $('#oneResult .one-waiting') ? '有' : '無', '有');
 
     // 判定只看 5 項數值 + 星力，其餘折進「其他數值」。混在一起會讓人
     // 以為都算進去了，所以這裡要驗它們真的分開
@@ -433,10 +441,11 @@
       });
     }
 
-    var starOK = setField('星力', 25);
+    setField('星力', 25);
     await sleep(200);
     log.push('  把星力改成 25：' + verdict() + '　' + metrics().join('、'));
-    check('改數值後判定會變', verdict() !== '數值相同' ? '有變' : '沒變', '有變');
+    check('填了值就開始判定', verdict() !== '（無）' ? '有判定' : '沒判定', '有判定');
+    check('試算裝備那一欄出現了', $$('#oneResult .one-col').length, 2);
     check('差異裡列出星力', metrics().filter(function (m) {
       return m.indexOf('★') === 0;
     }).length ? '有' : '無', '有');
@@ -468,24 +477,26 @@
     check('看不懂的潛能沒進判定',
       metrics().filter(function (m) { return /這不是潛能/.test(m); }).length, 0);
 
-    /* ---- 填回目前數值：應該回到「數值相同」 ---- */
+    /* ---- 填入目前數值：等於拿自己比自己，判定必須是「數值相同」 ---- */
     var reset = $$('#oneResult .one-tools button').filter(function (b) {
-      return /填回/.test(b.textContent);
+      return /填入目前/.test(b.textContent);
     })[0];
     if (reset) {
       reset.click();
       await sleep(400);
-      check('按「填回目前裝備的數值」', verdict(), '數值相同');
+      check('按「填入目前裝備的數值」', verdict(), '數值相同');
+      check('填入後欄位不再是空的', filled() > 0 ? '有值' : '仍是空的', '有值');
     }
 
-    /* ---- 清空：一定會有差異（除非那件本來就全 0） ---- */
+    /* ---- 清空：要回到一開始那個「還沒填」的狀態 ---- */
     var clear = $$('#oneResult .one-tools button').filter(function (b) {
       return /清空/.test(b.textContent);
     })[0];
     if (clear) {
       clear.click();
       await sleep(400);
-      log.push('  按「清空」：' + verdict());
+      check('按「清空」後欄位全空', filled(), 0);
+      check('按「清空」後回到未填狀態', verdict(), '（無）');
     }
 
     log.push('');
