@@ -488,6 +488,31 @@
       check('填入後欄位不再是空的', filled() > 0 ? '有值' : '仍是空的', '有值');
     }
 
+    /* ---- 從現有裝備帶入：這是能跨欄位比對的關鍵 ---- */
+    var src = $('#oneResult .one-src select');
+    check('有「從現有裝備帶入」下拉', src ? '有' : '無', '有');
+    if (src) {
+      var opts = Array.from(src.options).filter(function (o) { return o.value !== ''; });
+      log.push('  可帶入的裝備 ' + opts.length + ' 件，分 '
+        + src.querySelectorAll('optgroup').length + ' 位角色');
+
+      // 挑一件跟目前欄位不同欄位的，證明跨欄位真的能比
+      var other = opts.filter(function (o) {
+        return o.textContent.indexOf(want.value) !== 0;
+      })[0];
+      if (other) {
+        src.value = other.value;
+        src.dispatchEvent(new Event('change', { bubbles: true }));
+        await sleep(400);
+        log.push('  帶入「' + other.textContent.trim() + '」（與「'
+          + want.value + '」不同欄位）');
+        check('帶入後有判定', verdict() !== '（無）' ? '有判定' : '沒判定', '有判定');
+        check('帶入後欄位有值', filled() > 0 ? '有值' : '空的', '有值');
+      } else {
+        log.push('  *** 找不到不同欄位的裝備可帶入，跨欄位這段沒驗到 ***');
+      }
+    }
+
     /* ---- 清空：要回到一開始那個「還沒填」的狀態 ---- */
     var clear = $$('#oneResult .one-tools button').filter(function (b) {
       return /清空/.test(b.textContent);

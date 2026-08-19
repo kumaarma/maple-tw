@@ -4347,6 +4347,67 @@ function oneDraftItem(d, slot, mine) {
   return it;
 }
 
+/**
+ * 「帶入」下拉的來源：所有已載入角色的每一件裝備，跨角色也跨裝備頁。
+ *
+ * 這是為了比對不同欄位的裝備 —— 逐格比對是照欄位配對的，欄位名稱不同的
+ * 兩件（例如「能源」與另一件放在別的欄位的裝備）永遠碰不到面。帶入之後
+ * 就變成「我這一格 vs 那一件」，欄位是什麼都無所謂。
+ */
+let ONE_SOURCES = [];
+
+function oneBuildSources() {
+  ONE_SOURCES = [];
+  return Object.keys(CMP_DATA).map((name) => {
+    const raw = CMP_DATA[name];
+    const seen = new Set();
+    const items = [];
+    (raw.sets || []).forEach((set) => {
+      (set.items || []).forEach((it) => {
+        const k = (it.item_equipment_slot || '') + '|' + (it.item_name || '');
+        if (seen.has(k)) return;      // 同一件會出現在多個裝備頁
+        seen.add(k);
+        items.push({ idx: ONE_SOURCES.push(it) - 1, it: it });
+      });
+    });
+    return { name: name, items: items };
+  }).filter((g) => g.items.length);
+}
+
+/** 從現有裝備帶入數值的下拉 */
+function oneSourcePicker(onPick) {
+  const groups = oneBuildSources();
+  if (!groups.length) return null;
+
+  const wrap = el('label', 'one-src');
+  wrap.appendChild(el('span', null, '從現有裝備帶入'));
+
+  const sel = document.createElement('select');
+  const blank = document.createElement('option');
+  blank.value = '';
+  blank.textContent = '選一件裝備…';
+  sel.appendChild(blank);
+
+  groups.forEach((g) => {
+    const og = document.createElement('optgroup');
+    og.label = g.name;
+    g.items.forEach(({ idx, it }) => {
+      const o = document.createElement('option');
+      o.value = String(idx);
+      o.textContent = txt(it.item_equipment_slot) + '　' + txt(it.item_name);
+      og.appendChild(o);
+    });
+    sel.appendChild(og);
+  });
+
+  sel.addEventListener('change', () => {
+    const it = ONE_SOURCES[Number(sel.value)];
+    if (it) onPick(it);
+  });
+  wrap.appendChild(sel);
+  return wrap;
+}
+
 /** 數字輸入格 */
 function oneNumField(label, value, onChange) {
   const wrap = el('label', 'one-f');
@@ -4517,12 +4578,18 @@ function oneRender() {
   clear.addEventListener('click', () => { ONE_DRAFT = oneDraftFrom(null); oneRender(); });
   tools.appendChild(reset);
   tools.appendChild(clear);
+
+  const picker = oneSourcePicker((it) => { ONE_DRAFT = oneDraftFrom(it); oneRender(); });
+  if (picker) tools.appendChild(picker);
+
   form.appendChild(tools);
 
   out.appendChild(form);
 
   out.appendChild(el('p', 'hint',
-    '欄位預設留空，沒填的當 0。想從你身上那件改起，按「填入目前裝備的數值」。'
+    '欄位預設留空，沒填的當 0。想從你身上那件改起，按「填入目前裝備的數值」；'
+    + '「從現有裝備帶入」可以抓任何已載入角色的任何一件 —— '
+    + '欄位不同也能比，逐格比對做不到的就是這個。'
     + '判定看的是主屬性、主攻擊、BOSS 傷害、無視防禦、全屬性、星力與潛能／附加潛能，'
     + '規則與「裝備比對」完全相同 —— 折起來的那幾項 API 有給、但判定用不到，'
     + '填了不會影響結果。'));

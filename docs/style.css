@@ -1481,7 +1481,24 @@ td.rank-name { font-weight: 600; }
 }
 .one-rest summary:hover { color: var(--text); }
 
-.one-tools { display: flex; flex-wrap: wrap; gap: 10px; }
+.one-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+/* 下拉的內建寬度是照最長的選項算的，裝備名稱可以很長。
+   要能縮就得 min-width: 0 —— flex 項目預設 min-width: auto，
+   只設 max-width 擋不住，實測 375px 會溢出 10px。 */
+.one-src {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.one-src > span { font-size: 12px; color: var(--muted); flex: none; }
+.one-src select {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 320px;
+}
 
 /* 窄畫面塞得下兩欄數字（320px 扣掉邊距約 296，118+10+118=246）。
    潛能是文字，兩欄會擠到看不出打了什麼，維持一欄。 */
