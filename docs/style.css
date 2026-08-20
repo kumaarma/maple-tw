@@ -1319,6 +1319,25 @@ td.rank-name { font-weight: 600; }
   font-variant-numeric: tabular-nums;
 }
 
+/* 下一步最划算 */
+.hxp-plan .tablewrap { margin-top: 10px; }
+.hxp-plan-n {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  width: 2.4em;
+}
+.hxp-plan-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.hxp-plan-lv,
+.hxp-plan-cost,
+.hxp-plan-cum { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.hxp-plan-lv { color: var(--accent); font-weight: 600; }
+.hxp-plan-cum { color: var(--muted); }
+
 /* 還差多少材料 */
 .hxp-need {
   display: flex;

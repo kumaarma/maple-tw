@@ -2419,6 +2419,63 @@ function hexaRemain(type, level, name) {
   return { erda: erda, frag: frag };
 }
 
+/** 「下一步最划算」要排幾級 */
+const HEXA_PLAN_STEPS = 20;
+
+/**
+ * 接下來最划算的升級順序。
+ *
+ * 每一步都挑「下一級碎片最少」的核心，點掉之後再重算 —— 用貪心而不是
+ * 一次排序，因為同一顆每點一級就變貴，一次排序排出來的順序從第二步起
+ * 就是錯的。
+ *
+ * 算的是【等級效率】，不是傷害效率。哪一顆核心對輸出貢獻大要有職業技能
+ * 係數才算得出來，API 不給，所以這裡不假裝知道 —— 畫面上也講明白。
+ */
+function hexaPlan(cores, types) {
+  const cand = [];
+
+  (cores || []).forEach((c) => {
+    const t = c.hexa_core_type || '其他';
+    const tbl = hexaCostTable(t, c.hexa_core_name);
+    if (!tbl) return;                       // 沒有費用表就排不進來
+    const lv = lvNum(c.hexa_core_level);
+    if (lv >= HEXA_CORE_MAX) return;
+    cand.push({ name: c.hexa_core_name, type: t, lv: lv, tbl: tbl, src: c });
+  });
+
+  // 預期有但還沒開的，第一步就是開啟費用（費用表的 [0]）
+  types.forEach((g) => {
+    const tbl = hexaCostTable(g.type, '');
+    if (!tbl) return;
+    for (let i = g.have; i < g.target; i++) {
+      cand.push({ name: '尚未開啟的' + g.type, type: g.type, lv: 0, tbl: tbl, src: null });
+    }
+  });
+
+  const out = [];
+  let erda = 0, frag = 0;
+  for (let n = 0; n < HEXA_PLAN_STEPS; n++) {
+    let best = null;
+    cand.forEach((c) => {
+      if (c.lv >= HEXA_CORE_MAX) return;
+      const cost = c.tbl[c.lv];
+      if (!best || cost[1] < best.cost[1]) best = { c: c, cost: cost };
+    });
+    if (!best) break;
+
+    const c = best.c, cost = best.cost;
+    erda += cost[0];
+    frag += cost[1];
+    out.push({
+      name: c.name, type: c.type, from: c.lv, to: c.lv + 1,
+      erda: cost[0], frag: cost[1], cumErda: erda, cumFrag: frag, src: c.src,
+    });
+    c.lv += 1;
+  }
+  return out;
+}
+
 /**
  * 算六轉進度。
  *
@@ -2519,7 +2576,8 @@ function hexaProgress(cores, stat, cls) {
                skill: hexaCommon3Skill(cls), erda: erda, frag: frag };
     });
 
-  return { types: types, core: core, stat: st, low: low, upcoming: upcoming };
+  return { types: types, core: core, stat: st, low: low, upcoming: upcoming,
+           plan: hexaPlan(cores, types) };
 }
 
 /** 進度條。滿了另外標 class，但滿級與否同時也有文字，不只靠顏色 */
@@ -2613,6 +2671,52 @@ function renderHexaProgress(cores, stat, icons, cls) {
         '（不含 ' + p.core.unknown + ' 個沒有費用表的核心）'));
     }
     f.appendChild(need);
+  }
+
+  /* ---- 接下來最划算的順序 ---- */
+  if (p.plan.length) {
+    const det = el('details', 'exp-table hxp-plan');
+    det.appendChild(el('summary', null, '下一步最划算（接下來 ' + p.plan.length + ' 級）'));
+
+    const wrap = el('div', 'tablewrap');
+    const table = el('table', 'rank');
+    const thead = el('thead');
+    const th = el('tr');
+    ['#', '核心', '等級', '這一級', '累計'].forEach((h) => th.appendChild(el('th', null, h)));
+    thead.appendChild(th);
+    table.appendChild(thead);
+
+    const tb = el('tbody');
+    p.plan.forEach((step, i) => {
+      const tr = el('tr');
+      tr.appendChild(el('td', 'hxp-plan-n', String(i + 1)));
+
+      const nameTd = el('td', 'rank-name');
+      const box = el('span', 'hxp-plan-name');
+      box.appendChild(iconImg(hexaCoreIcon(step.src, icons), 20));
+      box.appendChild(el('span', null, txt(step.name)));
+      nameTd.appendChild(box);
+      nameTd.appendChild(el('small', 'cmp-note', step.type));
+      tr.appendChild(nameTd);
+
+      tr.appendChild(el('td', 'hxp-plan-lv', step.from + ' → ' + step.to));
+      tr.appendChild(el('td', 'hxp-plan-cost',
+        '艾爾達 ' + num(step.erda) + '　碎片 ' + num(step.frag)));
+      tr.appendChild(el('td', 'hxp-plan-cum',
+        num(step.cumErda) + ' / ' + num(step.cumFrag)));
+      tb.appendChild(tr);
+    });
+    table.appendChild(tb);
+    wrap.appendChild(table);
+    det.appendChild(wrap);
+
+    det.appendChild(el('p', 'hint',
+      '每一步都挑「下一級碎片最少」的核心，點掉再重算 —— 同一顆每點一級就變貴，'
+      + '一次排序從第二步起就不對了。'
+      + '這裡排的是【等級效率】，不是傷害效率：哪一顆對你的輸出貢獻大，'
+      + '要有職業技能係數才算得出來，官方 API 不提供，所以這份順序不會告訴你那件事。'));
+
+    f.appendChild(det);
   }
 
   /* ---- 台版還沒開放的核心 ---- */
