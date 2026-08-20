@@ -972,6 +972,45 @@ function n0(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
+/* ---------- 靈魂武器 ---------- */
+
+/**
+ * 靈魂武器的資料。API 有兩代欄位，同一件裝備上會並存：
+ *
+ *   舊：soul_name（威爾的靈魂之類）、soul_option
+ *   新：soul_weapon_grade / _level / _option / _power_increase
+ *
+ * 改版後的靈魂武器實測只填新的那組，soul_name 與 soul_option 是 null。
+ * 舊角色資料反過來只有舊的，所以兩組都要看，不能只認一邊。
+ *
+ * 遊戲畫面上還有「經驗 376/1704」「靈魂的鬥志」「各BOSS獲得量」與碎片存量，
+ * 這些 API 都不給，抓不到就是抓不到，不要自己編一個進度條出來。
+ */
+function soulWeapon(it) {
+  if (!it) return null;
+  const s = {
+    grade: it.soul_weapon_grade || '',
+    level: it.soul_weapon_level || '',
+    option: it.soul_weapon_option || it.soul_option || '',
+    power: n0(it.soul_weapon_power_increase),
+    name: it.soul_name || '',
+  };
+  // 全空就是沒有靈魂武器。等級 0 也算有，畢竟階級與烙印可能已經在了
+  if (!s.grade && !s.level && !s.option && !s.power && !s.name) return null;
+  return s;
+}
+
+/** 一行摘要，給裝備卡片用 */
+function soulWeaponBrief(s) {
+  const parts = [];
+  if (s.name) parts.push(s.name);
+  if (s.grade) parts.push(s.grade + ' 階');
+  if (s.level) parts.push('Lv.' + s.level);
+  if (s.option) parts.push(s.option);
+  if (s.power) parts.push('共鳴 +' + num(s.power));
+  return parts.join('　');
+}
+
 function showItemTip(it) {
   const tip = $('#itemTip');
   tip.innerHTML = '';
@@ -1119,11 +1158,28 @@ function showItemTip(it) {
   });
 
   /* 靈魂武器 */
-  if (it.soul_name || it.soul_option) {
+  const soul = soulWeapon(it);
+  if (soul) {
     const box = el('div', 'tip-soul');
-    box.appendChild(el('div', 'soulhead', '靈魂武器'));
-    if (it.soul_name) box.appendChild(el('div', null, it.soul_name));
-    if (it.soul_option) box.appendChild(el('div', 'soulopt', it.soul_option));
+    const sh = el('div', 'soulhead');
+    sh.appendChild(el('span', null, '靈魂武器'));
+    if (soul.grade) sh.appendChild(el('span', 'soulgrade', soul.grade + ' 階'));
+    if (soul.level) sh.appendChild(el('span', 'soullv', 'Lv.' + soul.level));
+    box.appendChild(sh);
+
+    if (soul.name) box.appendChild(el('div', null, soul.name));
+    if (soul.option) {
+      const o = el('div', 'soulopt');
+      o.appendChild(el('span', 'soulopt-lab', '烙印'));
+      o.appendChild(document.createTextNode(soul.option));
+      box.appendChild(o);
+    }
+    if (soul.power) {
+      const r = el('div', 'soulopt');
+      r.appendChild(el('span', 'soulopt-lab', '共鳴'));
+      r.appendChild(document.createTextNode('物理攻擊力／魔法攻擊力 +' + num(soul.power)));
+      box.appendChild(r);
+    }
     tip.appendChild(box);
   }
 
@@ -1341,7 +1397,8 @@ function equipContent(items) {
       lines.push('卷軸 ' + it.scroll_upgrade + ' 次'
         + (it.scroll_upgradeable_count ? '（可再 ' + it.scroll_upgradeable_count + '）' : ''));
     }
-    if (it.soul_name) lines.push('靈魂：' + it.soul_name + ' ' + txt(it.soul_option));
+    const sw = soulWeapon(it);
+    if (sw) lines.push('靈魂武器：' + soulWeaponBrief(sw));
     if (it.date_expire) lines.push('到期：' + String(it.date_expire).slice(0, 10));
 
     wrap.appendChild(itemCard({

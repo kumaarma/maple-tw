@@ -57,6 +57,14 @@ python tools/rwd_scan.py --shot 1 --widths 1100    # 桌機版對照
 localStorage、逐格比對的三個顯示開關關掉後元素是不是真的消失。這類功能
 壞掉時畫面照樣渲染，光看截圖看不出來。
 
+`--mode soul` 測靈魂武器那一段有沒有顯示出來。改版後 API 換成 `soul_weapon_*`
+欄位、舊的 `soul_name` 變成 `null`，只認舊欄位的話整塊會安靜地消失 —— 畫面照樣
+渲染，只是少一段，光看截圖看不出來。會驗詳細清單的摘要行與詳情彈窗裡的階級、
+等級、烙印、共鳴四項。
+
+`cache.json` 若是改版前抓的，`fixtures.js` 就不會有 `soul_weapon_*`，這個模式
+會回報「無法判定」而不是失敗。要真的驗到就重新查一次角色再跑 `make_fixtures.py`。
+
 `--mode hexa` 測的是算出來的數字。fixtures 那隻角色核心全滿，等於只驗得到 100%
 一種情況 —— 進度算錯（例如把還沒開啟的核心漏出分母）在滿版角色身上照樣顯示
 100%。所以會先把核心等級改寫成一組手算得出答案的值（技能 30/25、精通
@@ -92,6 +100,6 @@ localStorage、逐格比對的三個顯示開關關掉後元素是不是真的�
 | `harness/runner.html` | 用 iframe 鎖死版面寬度，輪詢取結果 |
 | `harness/mock.js` | 把 `fetch` 換成讀 fixtures |
 | `harness/scan.js` | 溢出與破洞的偵測邏輯 |
-| `harness/driver.js` | 點分頁、切配對模式、收集結果 |
+| `harness/driver.js` | 點分頁、切配對模式、開詳情彈窗、收集結果 |
 
 `fixtures.js` 含角色資料，從 `cache.json` 產生，已列入 `.gitignore`。

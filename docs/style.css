@@ -1701,8 +1701,39 @@ pre.raw {
   font-size: 12.5px;
   color: var(--text);
 }
-.tip-soul .soulhead { color: #ff9ad4; font-weight: 700; margin-bottom: 4px; }
-.tip-soul .soulopt { color: var(--muted); }
+.tip-soul .soulhead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  color: #ff9ad4;
+  font-weight: 700;
+  margin-bottom: 5px;
+}
+.tip-soul .soulgrade,
+.tip-soul .soullv {
+  font-size: 11.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  padding: 1px 7px;
+  border: 1px solid currentColor;
+  border-radius: 5px;
+}
+.tip-soul .soulopt {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+/* 固定寬度，「烙印」與「共鳴」兩行的數值才會對齊 */
+.tip-soul .soulopt-lab {
+  flex: none;
+  width: 2.6em;
+  font-size: 11px;
+  color: #ff9ad4;
+  opacity: .8;
+}
 
 .tip-desc {
   margin-top: 12px;

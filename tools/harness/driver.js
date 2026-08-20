@@ -6,6 +6,7 @@
  *   #mode=compare        裝備比對：三種配對模式的列順序與裝備頁內容
  *   #mode=fold           區塊收合與比對頁的顯示開關
  *   #mode=hexa           六轉進度：改寫核心等級後比對算出來的數字
+ *   #mode=soul           靈魂武器：改版後的 soul_weapon_* 欄位有沒有顯示出來
  *
  * 結果寫進 #diag，由 runner.html 輪詢取走。
  */
@@ -369,6 +370,79 @@
 
   /* ================================================================ */
 
+  /**
+   * 靈魂武器。改版後 API 換了一組欄位（soul_weapon_*），舊的 soul_name
+   * 變成 null —— 只認舊欄位的話整塊會安靜地消失，畫面看不出少了東西。
+   *
+   * fixtures 那隻角色不一定有靈魂武器，沒有就回報「無法判定」而不是失敗。
+   */
+  async function runSoul() {
+    await lookup();
+    head();
+
+    var tab = $$('.tab').filter(function (t) {
+      return t.textContent.trim() === '裝備';
+    })[0];
+    if (!tab) { log.push('*** 找不到裝備分頁 ***'); return; }
+    tab.click();
+    await sleep(800);
+
+    log.push('');
+
+    /* ---- 詳細清單的摘要行 ---- */
+    var list = $$('.panel.active .eqtoggle .tab').filter(function (b) {
+      return b.textContent.trim() === '詳細清單';
+    })[0];
+    if (list) { list.click(); await sleep(500); }
+
+    var lines = $$('.panel.active .item-line, .panel.active .item-body div')
+      .map(function (n) { return n.textContent; })
+      .filter(function (t) { return t.indexOf('靈魂武器') === 0; });
+    log.push('詳細清單裡的靈魂武器摘要行：' + lines.length + ' 條');
+    lines.slice(0, 3).forEach(function (t) { log.push('  ' + t.trim()); });
+
+    if (!lines.length) {
+      log.push('  無法判定（這份測試資料沒有靈魂武器，'
+        + '要驗的話補 soul_weapon_* 欄位進 fixtures）');
+      log.push('');
+      log.push.apply(log, window.__scan('[靈魂武器]'));
+      return;
+    }
+
+    /* ---- 點開武器看詳情彈窗 ---- */
+    if (list) {
+      var grid = $$('.panel.active .eqtoggle .tab').filter(function (b) {
+        return b.textContent.trim() === '裝備欄';
+      })[0];
+      if (grid) { grid.click(); await sleep(400); }
+    }
+
+    var cells = $$('.panel.active .eqcell').filter(function (c) {
+      return c.querySelector('img');
+    });
+    var opened = false;
+    for (var i = 0; i < cells.length && !opened; i++) {
+      cells[i].click();
+      await sleep(250);
+      if ($('#itemTip .tip-soul')) opened = true;
+      else $('#itemModal').hidden = true;
+    }
+
+    check('詳情彈窗有靈魂武器區塊', opened ? '有' : '無', '有');
+    if (opened) {
+      var box = $('#itemTip .tip-soul');
+      var t = box.textContent.replace(/\s+/g, ' ').trim();
+      log.push('  ' + t);
+      check('有階級', /\d+ 階/.test(t) ? '有' : '無', '有');
+      check('有等級', /Lv\.\d+/.test(t) ? '有' : '無', '有');
+      check('有烙印', /烙印/.test(t) ? '有' : '無', '有');
+      check('有共鳴', /共鳴/.test(t) ? '有' : '無', '有');
+      // 彈窗留著不關：這個模式也拿來截圖，而且順便把彈窗本身掃進版面檢查
+      log.push.apply(log, window.__scan('[靈魂武器詳情]'));
+    }
+  }
+  /* ================================================================ */
+
   (async function () {
     try {
       await sleep(300);
@@ -381,6 +455,7 @@
       if (mode === 'compare') await runCompare();
       else if (mode === 'fold') await runFold();
       else if (mode === 'hexa') await runHexa();
+      else if (mode === 'soul') await runSoul();
       else await runTabs();
     } catch (e) {
       log.push('ERROR ' + e.message);
