@@ -8,9 +8,48 @@
 </head>
 <body>
 
+<!-- 圖示 sprite。Lucide (ISC) + 自繪楓葉；描邊統一 currentColor，跟著文字顏色走 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-leaf" viewBox="0 0 24 24">
+    <path d="M12 21v-3.2l-4.6.8.6-2.2-4.5-3.6 1.4-.7-1.4-4.3 3.6 1 .9-1.8 3.1 3.4-.9-6 1.9 1.1L12 2l1.4 3.4 1.9-1.1-.9 6 3.1-3.4.9 1.8 3.6-1-1.4 4.3 1.4.7-4.5 3.6.6 2.2-4.6-.8V21z"/>
+  </symbol>
+  <symbol id="i-search" viewBox="0 0 24 24">
+    <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+  </symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="3"/>
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+  </symbol>
+  <symbol id="i-swap" viewBox="0 0 24 24">
+    <path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/>
+  </symbol>
+  <symbol id="i-pointer" viewBox="0 0 24 24">
+    <path d="M14 10V9a2 2 0 0 0-2-2a2 2 0 0 0-2 2v1"/>
+    <path d="M10 9.5V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v10"/>
+    <path d="M18 11v-1a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/>
+    <path d="M18 11a2 2 0 1 1 4 0v3a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>
+  </symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24">
+    <rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>
+  </symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24">
+    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>
+    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>
+  </symbol>
+  <symbol id="i-ticket" viewBox="0 0 24 24">
+    <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/>
+    <path d="M13 5v2M13 11v2M13 17v2"/>
+  </symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24">
+    <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+    <path d="M12 9v4M12 17h.01"/>
+  </symbol>
+</svg>
+
+
 <header class="topbar">
   <div class="brand">
-    <span class="leaf">🍁</span>
+    <svg class="ico ico-fill leaf" aria-hidden="true"><use href="#i-leaf"/></svg>
     <div>
       <h1>新楓之谷角色查詢</h1>
       <p class="sub">台版 TMS · NEXON Open API</p>
@@ -24,7 +63,9 @@
 
   <div class="topright">
     <span id="quota" class="quota" title="今日已用的 API 次數"></span>
-    <button id="keyBtn" class="ghost" type="button" title="設定 NEXON Open API 金鑰">⚙ API 金鑰</button>
+    <button id="keyBtn" class="ghost" type="button" title="設定 NEXON Open API 金鑰">
+      <svg class="ico" aria-hidden="true"><use href="#i-settings"/></svg> API 金鑰
+    </button>
   </div>
 </header>
 
@@ -42,7 +83,9 @@
           <span>快照日期</span>
           <input id="dateInput" type="date">
         </label>
-        <button type="submit" id="goBtn" class="search-btn">🔍 查詢</button>
+        <button type="submit" id="goBtn" class="search-btn">
+          <svg class="ico" aria-hidden="true"><use href="#i-search"/></svg> 查詢
+        </button>
       </form>
       <p class="hint search-note">留空日期查最新；填日期查該日快照（不可選今天）。</p>
     </div>
@@ -52,7 +95,7 @@
 
   <main>
     <div id="welcome" class="welcome">
-      <div class="welcome-icon" aria-hidden="true">🍁</div>
+      <div class="welcome-icon" aria-hidden="true"><svg class="ico ico-fill" aria-hidden="true"><use href="#i-leaf"/></svg></div>
       <h2>查詢台版角色資料</h2>
       <p class="welcome-lead">輸入角色名稱，即可查看等級、裝備、聯盟、HEXA 等資訊。</p>
       <ol class="welcome-steps">
@@ -81,7 +124,9 @@
           <span>角色 B</span>
           <input id="cmpB" type="text" list="cmpNames" placeholder="輸入角色名稱" spellcheck="false" required>
         </label>
-        <button type="submit" id="cmpGo" class="search-btn">⇄ 比對</button>
+        <button type="submit" id="cmpGo" class="search-btn">
+          <svg class="ico" aria-hidden="true"><use href="#i-swap"/></svg> 比對
+        </button>
       </form>
       <datalist id="cmpNames"></datalist>
 

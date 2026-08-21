@@ -14,6 +14,34 @@ function el(tag, cls, text) {
   return n;
 }
 
+/**
+ * index.html 的 sprite 圖示。
+ *
+ * 不用 emoji：同一個字在 Windows／Android／iOS 是三套完全不同的畫風，
+ * 大小與基線也各自為政，擺進按鈕裡對不齊。SVG 三個平台長得一樣，
+ * 而且描邊吃 currentColor，按鈕變色時圖示自己會跟著變。
+ *
+ * 一律 aria-hidden：這些圖示旁邊都有文字，讓螢幕閱讀器唸兩次只是吵。
+ */
+function icon(name) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'ico');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+  use.setAttribute('href', '#i-' + name);
+  svg.appendChild(use);
+  return svg;
+}
+
+/** 圖示 + 文字，中間補一個空白 */
+function iconText(name, text) {
+  const frag = document.createDocumentFragment();
+  frag.appendChild(icon(name));
+  frag.appendChild(document.createTextNode(' ' + text));
+  return frag;
+}
+
 function num(v) {
   if (v === null || v === undefined || v === '') return '—';
   const n = Number(v);
@@ -358,23 +386,59 @@ function render(name) {
   box.appendChild(renderHero(name));
 
   const tabsWrap = el('div', 'tabs-wrap');
-  tabsWrap.appendChild(el('p', 'tabs-hint',
-    '👆 點選分頁查看詳細資料 · 各分頁首次開啟才會向 API 請求，節省配額'));
+  const hint = el('p', 'tabs-hint');
+  hint.appendChild(iconText('pointer',
+    '點選分頁查看詳細資料 · 各分頁首次開啟才會向 API 請求，節省配額'));
+  tabsWrap.appendChild(hint);
 
   const tabs = el('div', 'tabs');
+  tabs.setAttribute('role', 'tablist');
   const panels = el('div', 'panels');
+
+  /* 手機版分頁列是一排橫捲的，用鍵盤或程式切到看不見的分頁時要自己捲過去。
+     不用 scrollIntoView：那個會連整頁一起捲，點分頁時畫面會跳。 */
+  function revealTab(btn) {
+    const left = btn.offsetLeft;
+    const right = left + btn.offsetWidth;
+    if (left < tabs.scrollLeft) {
+      tabs.scrollLeft = left - 12;
+    } else if (right > tabs.scrollLeft + tabs.clientWidth) {
+      // 右緣有 26px 的漸層遮罩，多讓一點才不會停在半透明底下
+      tabs.scrollLeft = right - tabs.clientWidth + 26;
+    }
+  }
 
   TABS.forEach(([label, needs, fn], i) => {
     const btn = el('button', 'tab' + (i === 0 ? ' active loaded' : ''), label);
     btn.type = 'button';
+    btn.setAttribute('role', 'tab');
+    btn.id = 'tab-' + i;
+    btn.setAttribute('aria-selected', i === 0 ? 'true' : 'false');
+    btn.setAttribute('aria-controls', 'panel-' + i);
+    /* roving tabindex：整列分頁只佔一個 Tab 停留點，進到列上之後用左右鍵走。
+       11 個分頁各自可 Tab 的話，鍵盤使用者要按 11 次才跳得過這一列。 */
+    btn.tabIndex = i === 0 ? 0 : -1;
+
     const panel = el('div', 'panel' + (i === 0 ? ' active' : ''));
+    panel.id = 'panel-' + i;
+    panel.setAttribute('role', 'tabpanel');
+    panel.setAttribute('aria-labelledby', 'tab-' + i);
+    // 面板內容可能很長又沒有可聚焦元素，給 0 才捲得到
+    panel.tabIndex = 0;
     let loaded = false;
 
     async function activate() {
-      tabs.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
+      tabs.querySelectorAll('.tab').forEach((t) => {
+        t.classList.remove('active');
+        t.setAttribute('aria-selected', 'false');
+        t.tabIndex = -1;
+      });
       panels.querySelectorAll('.panel').forEach((p) => p.classList.remove('active'));
       btn.classList.add('active');
+      btn.setAttribute('aria-selected', 'true');
+      btn.tabIndex = 0;
       panel.classList.add('active');
+      revealTab(btn);
 
       if (loaded) return;
       loaded = true;
@@ -398,6 +462,24 @@ function render(name) {
     }
 
     btn.addEventListener('click', activate);
+
+    /* WAI-ARIA 的 tablist 鍵盤約定：左右鍵換分頁、Home/End 跳頭尾。
+       換過去要真的把焦點帶過去，不然螢幕閱讀器唸的還是原本那顆。 */
+    btn.addEventListener('keydown', (e) => {
+      const keys = { ArrowRight: 1, ArrowLeft: -1, Home: 'first', End: 'last' };
+      const move = keys[e.key];
+      if (move === undefined) return;
+      e.preventDefault();
+      const all = Array.from(tabs.querySelectorAll('.tab'));
+      const at = all.indexOf(btn);
+      let next;
+      if (move === 'first') next = 0;
+      else if (move === 'last') next = all.length - 1;
+      else next = (at + move + all.length) % all.length;   // 走到頭接回另一端
+      all[next].focus();
+      all[next].click();
+    });
+
     tabs.appendChild(btn);
     panels.appendChild(panel);
 
@@ -510,7 +592,11 @@ function renderHero(name) {
   if (Number.isFinite(rate)) {
     lvRow.appendChild(el('span', 'hero-rate', '(' + rate + '%)'));
   }
-  if (QDATE) lvRow.appendChild(el('span', 'hero-asof', '📅 ' + QDATE + ' 快照'));
+  if (QDATE) {
+    const asof = el('span', 'hero-asof');
+    asof.appendChild(iconText('calendar', QDATE + ' 快照'));
+    lvRow.appendChild(asof);
+  }
   right.appendChild(lvRow);
 
   if (Number.isFinite(rate)) {
@@ -549,7 +635,8 @@ function renderHero(name) {
   hero.appendChild(right);
 
   if (!QDATE) {
-    const re = el('button', 'ghost hero-refresh', '↻ 重新整理');
+    const re = el('button', 'ghost hero-refresh');
+    re.appendChild(iconText('refresh', '重新整理'));
     re.type = 'button';
     re.title = '跳過快取，重新向官方要一次最新資料';
     re.addEventListener('click', async () => {
@@ -4665,7 +4752,11 @@ function wireKeyModal() {
      否則會誤導測試者去貼自己的 NEXON 金鑰。 */
   if (HOSTED) {
     const btn = $('#keyBtn');
-    if (btn) { btn.textContent = '🎫 封測碼'; btn.title = '輸入封測通行碼'; }
+    if (btn) {
+      btn.textContent = '';
+      btn.appendChild(iconText('ticket', '封測碼'));
+      btn.title = '輸入封測通行碼';
+    }
     const h2 = document.querySelector('#keyModal h2');
     if (h2) h2.textContent = '封測通行碼';
     const note = document.querySelector('#keyModal .modal-note');
@@ -4715,9 +4806,9 @@ function wireKeyModal() {
     const s = $('#status');
     s.className = 'status info';
     s.innerHTML = '';
-    s.appendChild(document.createTextNode(HOSTED
-      ? '⚠ 尚未輸入封測碼，無法查詢角色 — '
-      : '⚠ 尚未設定 API 金鑰，無法查詢角色 — '));
+    s.appendChild(iconText('warn', HOSTED
+      ? '尚未輸入封測碼，無法查詢角色 — '
+      : '尚未設定 API 金鑰，無法查詢角色 — '));
     const a = el('a', null, '點此設定');
     a.href = '#';
     a.addEventListener('click', (ev) => { ev.preventDefault(); openModal(); });

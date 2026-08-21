@@ -43,11 +43,62 @@
     head();
     var tabs = $$('.tab');
     log.push('分頁數=' + tabs.length);
+    checkTabA11y(tabs);
     for (var i = 0; i < tabs.length; i++) {
       tabs[i].click();
       await sleep(700);
       log.push.apply(log, window.__scan('[' + tabs[i].textContent.trim() + ']'));
     }
+  }
+
+  /**
+   * 分頁列的無障礙屬性。
+   *
+   * 這些東西壞掉的時候畫面完全正常 —— 滑鼠使用者一切照舊，只有鍵盤與
+   * 螢幕閱讀器的人受影響，所以肉眼看不出來，只能用測的。
+   *
+   * roving tabindex 驗的是「整列只有一個 Tab 停留點」：11 個分頁都可以
+   * Tab 的話，鍵盤使用者要按 11 次才跳得過這一列。
+   */
+  function checkTabA11y(tabs) {
+    var list = $('.tabs');
+    check('分頁列有 role=tablist', list ? list.getAttribute('role') : '（無）', 'tablist');
+
+    var roles = tabs.filter(function (t) { return t.getAttribute('role') === 'tab'; });
+    check('每顆分頁都有 role=tab', roles.length, tabs.length);
+
+    var selected = tabs.filter(function (t) {
+      return t.getAttribute('aria-selected') === 'true';
+    });
+    check('只有一顆標成 aria-selected', selected.length, 1);
+
+    var focusable = tabs.filter(function (t) { return t.tabIndex === 0; });
+    check('整列只有一個 Tab 停留點', focusable.length, 1);
+    check('可聚焦的就是選中的那顆',
+      focusable[0] === selected[0] ? '是' : '否', '是');
+
+    var linked = tabs.filter(function (t) {
+      var id = t.getAttribute('aria-controls');
+      var p = id && document.getElementById(id);
+      return p && p.getAttribute('aria-labelledby') === t.id;
+    });
+    check('分頁與面板互相指得到', linked.length, tabs.length);
+
+    /* 左右鍵要真的換分頁。只驗按鍵有反應，不驗停在哪一顆 ——
+       走到頭會繞回另一端，寫死索引反而綁死行為。 */
+    var before = selected[0];
+    tabs[0].focus();
+    tabs[0].dispatchEvent(new KeyboardEvent('keydown',
+      { key: 'ArrowRight', bubbles: true, cancelable: true }));
+    var after = $$('.tab').filter(function (t) {
+      return t.getAttribute('aria-selected') === 'true';
+    })[0];
+    check('右方向鍵會換分頁', after && after !== before ? '會' : '不會', '會');
+    check('換過去焦點也跟著走',
+      document.activeElement === after ? '是' : '否', '是');
+
+    var svgs = document.querySelectorAll('.ico use');
+    check('圖示用 SVG sprite', svgs.length > 0 ? '是' : '否', '是');
   }
 
   async function runOneTab(idx) {

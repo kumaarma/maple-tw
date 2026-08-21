@@ -180,6 +180,32 @@ E:\maple-tw\
   static\       index.html · style.css · app.js
 ```
 
+## 介面
+
+**分頁列在手機上是一排橫捲的，不是換行。** 11 個分頁換行會在 375px 擠成
+三排、吃掉半個畫面，而且看不出右邊還有幾個。改成單排橫捲之後右緣做淡出
+提示，配 scroll-snap 停在分頁邊界；用鍵盤或程式切到看不見的分頁時會自己
+捲過去（改 `.tabs` 的 scrollLeft，不用 `scrollIntoView` —— 那個會連整頁
+一起捲，畫面會跳）。
+
+**分頁列照 WAI-ARIA 的 tablist 約定做。** 左右鍵換分頁、Home/End 跳頭尾、
+roving tabindex 讓整列只佔一個 Tab 停留點 —— 11 個分頁各自可 Tab 的話，
+鍵盤使用者要按 11 次才跳得過這一列。
+
+**圖示是 SVG sprite，不是 emoji。** 同一個 emoji 在 Windows／Android／iOS
+是三套畫風，大小與基線也各自為政，擺進按鈕裡對不齊。SVG 三個平台一致，
+描邊吃 `currentColor`，按鈕變色時圖示自己跟著變。星力的 ★ 是遊戲數值不是
+圖示，保留；`<option>` 裡的 ⚠ 也保留 —— 那裡只吃純文字，放不進 SVG。
+
+**焦點看得見。** `input`／`select` 原本設了 `outline: none` 沒補回來，按鈕
+更是完全沒有樣式。改用 `:focus-visible`，只在鍵盤操作時出現，滑鼠點擊不會
+多一圈框。
+
+**尊重系統的「減少動態效果」。** `prefers-reduced-motion: reduce` 時把轉場與
+動畫收掉 —— 這個站的動畫都只是點綴，拿掉不影響功能。
+
+色票沒動：`--muted` 在卡片上是 5.46:1、`--text` 13.42:1，本來就過 4.5:1。
+
 ## 注意
 
 - 金鑰分區獨立，台版金鑰打韓版／東南亞版路徑會回 `OPENAPI00006`。

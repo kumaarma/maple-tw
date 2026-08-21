@@ -16,6 +16,18 @@
 
 * { box-sizing: border-box; }
 
+/* 系統開了「減少動態效果」就別再動。前庭功能敏感的人看到轉場會不舒服，
+   而這個站的動畫都只是點綴，拿掉不影響任何功能。
+   不用 0s 是因為有些瀏覽器會直接跳過 transitionend 事件。 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* 本檔用 .modal 等類別設了 display，權重與瀏覽器預設的
    [hidden]{display:none} 相同，而作者樣式優先 —— 會讓 hidden 屬性失效。
    這條把 hidden 的效力補回來，別移除。 */
@@ -32,6 +44,37 @@ body {
 
 a { color: var(--accent); }
 
+/* ---------- 圖示 ---------- */
+
+/* 尺寸跟著字級走（em），所以同一顆圖示放進大按鈕或小提示都自己對齊。
+   currentColor 讓它跟著文字變色 —— 按鈕 hover、警告轉紅都不用另外寫。 */
+.ico {
+  width: 1.05em;
+  height: 1.05em;
+  flex: 0 0 auto;
+  vertical-align: -.14em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* 楓葉是實心的，描邊反而糊成一團 */
+.ico-fill { fill: currentColor; stroke: none; }
+
+/* 圖示＋文字的按鈕：用 inline-flex 讓兩者垂直置中，
+   不然中日文字的基線跟圖示對不齊，會看起來歪一格。 */
+button .ico { vertical-align: 0; }
+.search-btn, #keyBtn, .hero-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+/* iconText() 補的那個空白在 flex 容器裡會被收掉（匿名 flex 項目的
+   前導空白依規範摺疊），所以按鈕靠 gap；純文字容器如 .tabs-hint
+   不是 flex，就靠那個空白。兩邊都不會變成雙倍間距。 */
+
 /* ---------- 頁首 ---------- */
 
 .topbar {
@@ -45,7 +88,7 @@ a { color: var(--accent); }
 }
 
 .brand { display: flex; align-items: center; gap: 12px; }
-.leaf { font-size: 28px; line-height: 1; }
+.leaf { width: 28px; height: 28px; color: var(--accent); }
 .topbar h1 { margin: 0; font-size: 18px; letter-spacing: .5px; }
 .sub { margin: 1px 0 0; font-size: 11.5px; color: var(--muted); }
 
@@ -168,6 +211,21 @@ button {
 button:hover { filter: brightness(1.08); }
 button:disabled { opacity: .5; cursor: default; filter: none; }
 
+/* 鍵盤焦點。input/select 上面設了 outline:none，按鈕則本來就沒有樣式 ——
+   滑鼠使用者無感，但用 Tab 走的人完全看不出焦點在哪。:focus-visible 只在
+   鍵盤操作時觸發，所以補回來不會讓滑鼠點擊多出一圈框。 */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* 有自己圓角的元件，外框跟著圓才不會出現方角套圓角 */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible { border-radius: var(--radius); }
+.tab:focus-visible { border-radius: 8px 8px 0 0; }
+.navbtn:focus-visible,
+.quota:focus-visible { border-radius: 99px; }
+
 button.ghost {
   background: transparent;
   color: var(--muted);
@@ -193,7 +251,8 @@ main {
   border: 1px solid var(--line);
   border-radius: 16px;
 }
-.welcome-icon { font-size: 42px; line-height: 1; margin-bottom: 12px; }
+.welcome-icon { font-size: 42px; line-height: 1; margin-bottom: 12px; color: var(--accent); }
+.welcome-icon .ico { width: 42px; height: 42px; }
 .welcome h2 {
   margin: 0 0 8px;
   font-size: 22px;
@@ -1827,14 +1886,43 @@ pre.raw {
   .hero-lv b { font-size: 25px; }
   .hero-power .value { font-size: 22px; }
 
-  /* 分頁列項目多，縮一點才不會佔掉整個畫面 */
-  .tab { padding: 9px 11px; font-size: 14px; }
-  .pset { padding: 6px 11px; font-size: 12px; }
+  /* 分頁列有 11 個項目，換行的話在 375px 會擠成三排、吃掉半個畫面，
+     而且「還有幾個分頁」看不出來。改成一排橫捲：高度固定一行，
+     捲到哪裡都看得到自己在整列的哪個位置。
+     scroll-snap 讓手指放開時停在分頁邊界，不會停在切一半的地方。 */
+  .tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+    /* 右緣留白給下面的漸層蓋，捲到底時蓋住的是空白不是分頁 */
+    padding-right: 26px;
+    /* 捲軸在手機上只是佔高度，捲動位置靠漸層與 snap 就看得出來 */
+    scrollbar-width: none;
+    /* 遮罩讓右緣淡出，暗示右邊還有東西 */
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent);
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab {
+    scroll-snap-align: start;
+    white-space: nowrap;
+    flex: 0 0 auto;
+    font-size: 14px;
+  }
 
-  /* 觸控目標：手指比滑鼠粗，小按鈕要夠大才點得到 */
+  /* 觸控目標：手指比滑鼠粗，小按鈕要夠大才點得到。
+     分頁與導覽鈕原本約 38–40px 高，補到 44px。 */
+  .tab { padding: 0 13px; min-height: 44px; }
+  .navbtn { padding: 0 14px; min-height: 44px; }
+  .pset { padding: 0 12px; min-height: 44px; font-size: 12px; }
+  .tab, .navbtn, .pset {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
   .chip-x { padding: 0 14px; }
   .chip-go { padding: 8px 6px 8px 14px; }
-  .navbtn { padding: 8px 14px; }
 
   /* 裝備欄與聯盟版圖本來就有橫向捲動的容器，這裡只確保不被裁掉。
      另外，裝備視窗中央那欄是角色圖、橫跨六列 —— 手機上會變成一塊
