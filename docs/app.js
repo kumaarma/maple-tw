@@ -2318,10 +2318,10 @@ function hexaTypeRank(t) {
   return i < 0 ? 99 : i;
 }
 
-/** 等級欄位偶爾是字串，統一轉成數字，壞值算 0 */
+/** 等級欄位偶爾是字串，統一轉成整數，壞值算 0。小數會被當成費用表的索引，所以要砍掉 */
 function lvNum(v) {
   const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
+  return Number.isFinite(n) ? Math.trunc(n) : 0;
 }
 
 /**
@@ -2423,11 +2423,13 @@ function hexaRemain(type, level, name) {
 const HEXA_PLAN_STEPS = 20;
 
 /**
- * 接下來最划算的升級順序。
+ * 接下來 HEXA_PLAN_STEPS 級最省碎片的點法。
  *
- * 每一步都挑「下一級碎片最少」的核心，點掉之後再重算 —— 用貪心而不是
- * 一次排序，因為同一顆每點一級就變貴，一次排序排出來的順序從第二步起
- * 就是錯的。
+ * 不能用貪心。每 10 級有一次費用尖峰，貪心會為了閃尖峰跑去點別顆，
+ * 結果尖峰照付、尖峰後面便宜的那一段又沒吃到，排出來的 20 級比最佳解貴
+ * 一成以上。所以改成背包 DP：一顆核心「再點 k 級」的花費就是費用表的
+ * 前綴和，在總級數 = HEXA_PLAN_STEPS 的限制下湊出碎片最少的組合。
+ * 核心最多十幾顆、只排 20 級，格子小到直接算完就好。
  *
  * 算的是【等級效率】，不是傷害效率。哪一顆核心對輸出貢獻大要有職業技能
  * 係數才算得出來，API 不給，所以這裡不假裝知道 —— 畫面上也講明白。
@@ -2439,39 +2441,93 @@ function hexaPlan(cores, types) {
     const t = c.hexa_core_type || '其他';
     const tbl = hexaCostTable(t, c.hexa_core_name);
     if (!tbl) return;                       // 沒有費用表就排不進來
-    const lv = lvNum(c.hexa_core_level);
+    const lv = Math.max(0, Math.min(lvNum(c.hexa_core_level), HEXA_CORE_MAX));
     if (lv >= HEXA_CORE_MAX) return;
     cand.push({ name: c.hexa_core_name, type: t, lv: lv, tbl: tbl, src: c });
   });
 
-  // 預期有但還沒開的，第一步就是開啟費用（費用表的 [0]）
+  /* 預期有但還沒開的，第一步就是開啟費用（費用表的 [0]）。
+     同一類缺兩顆以上就編號 —— 名字一樣的話表格會出現兩列「0 → 1」，
+     看起來像重複的 bug，也分不出是哪一顆。 */
   types.forEach((g) => {
     const tbl = hexaCostTable(g.type, '');
     if (!tbl) return;
-    for (let i = g.have; i < g.target; i++) {
-      cand.push({ name: '尚未開啟的' + g.type, type: g.type, lv: 0, tbl: tbl, src: null });
+    const n = g.target - g.have;
+    for (let i = 0; i < n; i++) {
+      cand.push({
+        name: '新開的' + g.type + (n > 1 ? ' #' + (i + 1) : ''),
+        type: g.type, lv: 0, tbl: tbl, src: null,
+      });
     }
   });
+  if (!cand.length) return [];
 
+  // pre[k] = 這顆再點 k 級要幾片。k 最多排到 HEXA_PLAN_STEPS 或滿級
+  cand.forEach((c) => {
+    const pre = [0];
+    for (let k = 1; k <= HEXA_PLAN_STEPS && c.lv + k <= HEXA_CORE_MAX; k++) {
+      pre.push(pre[k - 1] + c.tbl[c.lv + k - 1][1]);
+    }
+    c.pre = pre;
+  });
+
+  // 剩不到 HEXA_PLAN_STEPS 級可點的話，有幾級就排幾級
+  let total = 0;
+  cand.forEach((c) => { total += c.pre.length - 1; });
+  total = Math.min(total, HEXA_PLAN_STEPS);
+  if (!total) return [];
+
+  // dp[j] = 前面幾顆核心一共點 j 級的最少碎片；take[i][j] 記第 i 顆點了幾級
+  let dp = new Array(total + 1).fill(Infinity);
+  dp[0] = 0;
+  const take = [];
+  cand.forEach((c) => {
+    const next = new Array(total + 1).fill(Infinity);
+    const pick = new Array(total + 1).fill(0);
+    for (let j = 0; j <= total; j++) {
+      for (let k = 0; k < c.pre.length && k <= j; k++) {
+        if (dp[j - k] === Infinity) continue;
+        const v = dp[j - k] + c.pre[k];
+        if (v < next[j]) { next[j] = v; pick[j] = k; }
+      }
+    }
+    dp = next;
+    take.push(pick);
+  });
+
+  // 倒著把每顆分到幾級撈回來，再轉正 —— 一模一樣的核心（例如同一類的兩顆
+  // 未開啟）平手時照原順序挑，編號才會從 #1 開始排
+  const left = [];
+  let rest = total;
+  for (let i = cand.length - 1; i >= 0; i--) {
+    const k = take[i][rest];
+    if (k > 0) left.push({ c: cand[i], lv: cand[i].lv, n: k });
+    rest -= k;
+  }
+  left.reverse();
+
+  /* 先後順序不影響總花費，純粹是呈現：每次挑「當下最便宜的下一級」，
+     同一顆的等級才會連續往上，看起來也才像真的照著點。 */
   const out = [];
   let erda = 0, frag = 0;
-  for (let n = 0; n < HEXA_PLAN_STEPS; n++) {
+  while (out.length < total) {
     let best = null;
-    cand.forEach((c) => {
-      if (c.lv >= HEXA_CORE_MAX) return;
-      const cost = c.tbl[c.lv];
-      if (!best || cost[1] < best.cost[1]) best = { c: c, cost: cost };
+    left.forEach((s) => {
+      if (!s.n) return;
+      const cost = s.c.tbl[s.lv];
+      if (!best || cost[1] < best.cost[1]) best = { s: s, cost: cost };
     });
     if (!best) break;
 
-    const c = best.c, cost = best.cost;
+    const s = best.s, cost = best.cost;
     erda += cost[0];
     frag += cost[1];
     out.push({
-      name: c.name, type: c.type, from: c.lv, to: c.lv + 1,
-      erda: cost[0], frag: cost[1], cumErda: erda, cumFrag: frag, src: c.src,
+      name: s.c.name, type: s.c.type, from: s.lv, to: s.lv + 1,
+      erda: cost[0], frag: cost[1], cumErda: erda, cumFrag: frag, src: s.c.src,
     });
-    c.lv += 1;
+    s.lv += 1;
+    s.n -= 1;
   }
   return out;
 }
@@ -2711,8 +2767,9 @@ function renderHexaProgress(cores, stat, icons, cls) {
     det.appendChild(wrap);
 
     det.appendChild(el('p', 'hint',
-      '每一步都挑「下一級碎片最少」的核心，點掉再重算 —— 同一顆每點一級就變貴，'
-      + '一次排序從第二步起就不對了。'
+      '這 ' + p.plan.length + ' 級是碎片花最少的組合 —— 不是每步挑最便宜的那種排法，'
+      + '那樣會為了閃過每 10 級的費用尖峰跑去點別顆，尖峰照付、後面便宜的一段又沒吃到。'
+      + '列的先後只是照「當下最便宜」排給你看，中途停手的話省下來的不一定最多。'
       + '這裡排的是【等級效率】，不是傷害效率：哪一顆對你的輸出貢獻大，'
       + '要有職業技能係數才算得出來，官方 API 不提供，所以這份順序不會告訴你那件事。'));
 

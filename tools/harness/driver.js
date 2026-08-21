@@ -351,46 +351,57 @@
     if (plan) {
       plan.open = true;
       await sleep(300);
-      var rows = plan.querySelectorAll('tbody tr');
-      check('排出來的級數', rows.length, 20);
+      var planRows = plan.querySelectorAll('tbody tr');
+      check('排出來的級數', planRows.length, 20);
 
-      // 貪心：每一步都該是當下最便宜的，所以成本不會一路遞增
-      // （每 10 級有尖峰，付掉之後下一級反而變便宜），但第一步一定是最小值
-      var frags = Array.from(rows).map(function (tr) {
+      // DP 排出的是 20 級總和最省的組合，列的先後照「當下最便宜」，
+      // 所以成本不會一路遞增（每 10 級有尖峰，付掉之後下一級反而變便宜）
+      var frags = Array.from(planRows).map(function (tr) {
         var t = tr.children[3].textContent;
         return /碎片 ([\d,]+)/.test(t) ? Number(RegExp.$1.replace(/,/g, '')) : -1;
       });
-      check('讀得到每一級的碎片數', frags.filter(function (x) { return x > 0; }).length, 20);
+      check('讀得到每一級的碎片數',
+        frags.filter(function (x) { return x > 0; }).length, planRows.length);
 
       /* 最便宜的那一步不一定排第一：付掉開啟費或每 10 級的尖峰之後，
          解鎖出來的下一級反而更便宜（例如強化核心 0→1 要 75，1→2 只要 23）。
          所以這裡驗的是「同一顆核心的等級連續往上」，不是成本排序。 */
       var byCore = {};
-      var contiguous = true;
-      Array.from(rows).forEach(function (tr) {
+      var contiguous = true, dupLabel = false;
+      Array.from(planRows).forEach(function (tr) {
         var name = tr.children[1].textContent.trim();
         var m = /(\d+)\s*→\s*(\d+)/.exec(tr.children[2].textContent);
         if (!m) { contiguous = false; return; }
         var from = Number(m[1]), to = Number(m[2]);
         if (to !== from + 1) contiguous = false;
-        if (name in byCore && byCore[name] !== from) contiguous = false;
+        /* 名字重覆又接不上有兩種可能：從 0 重來的是兩顆核心共用同一個標籤
+           （未開啟的核心沒編號就會這樣），其他才是真的排錯。分開報才看得出
+           是哪一種 —— 混在一起的話標籤沒編號會被誤報成順序有問題。 */
+        if (name in byCore && byCore[name] !== from) {
+          if (from === 0) dupLabel = true; else contiguous = false;
+        }
         byCore[name] = to;
       });
       check('同一顆核心的等級連續往上', contiguous ? '是' : '否', '是');
+      check('沒有兩顆核心共用同一個名稱', dupLabel ? '有' : '無', '無');
 
       // 累計要真的是累計
-      var cums = Array.from(rows).map(function (tr) {
+      var cums = Array.from(planRows).map(function (tr) {
         var t = tr.children[4].textContent;
         return /\/\s*([\d,]+)/.test(t) ? Number(RegExp.$1.replace(/,/g, '')) : -1;
       });
       var run = 0, ok = true;
       frags.forEach(function (f, i) { run += f; if (cums[i] !== run) ok = false; });
       check('累計欄位對得上逐級加總', ok ? '對' : '不對', '對');
-      log.push('  前 3 步：' + Array.from(rows).slice(0, 3).map(function (tr) {
+      log.push('  前 3 步：' + Array.from(planRows).slice(0, 3).map(function (tr) {
         return tr.children[1].textContent.trim().replace(/\s+/g, ' ')
           + ' ' + tr.children[2].textContent.trim();
       }).join('　｜　'));
-      log.push('  20 級累計：' + rows[19].children[4].textContent.trim());
+      // 核心快滿級時排不到 20 級，寫死 rows[19] 會炸掉，後面的檢查會整段跳過
+      if (planRows.length) {
+        log.push('  ' + planRows.length + ' 級累計：'
+          + planRows[planRows.length - 1].children[4].textContent.trim());
+      }
     }
 
     var det = $('.panel.active .hxp-todo');
