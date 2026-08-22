@@ -3485,7 +3485,9 @@ function expChart(points) {
       const t = mk('text', {
         x: x + barW / 2, y: H - padB + 18, class: 'axis', 'text-anchor': 'middle',
       });
-      t.textContent = p.date.slice(5);
+      /* p.date 進來就已經是 draw() 切好的「08-21」或「今日」，別再切一次 ——
+         '08-21'.slice(5) 是空字串，整條 x 軸的標籤會全部消失。 */
+      t.textContent = p.date;
       svg.appendChild(t);
     }
 

@@ -486,6 +486,118 @@
    *
    * fixtures 那隻角色不一定有靈魂武器，沒有就回報「無法判定」而不是失敗。
    */
+  /**
+   * 經驗追蹤。
+   *
+   * 這一頁要按「載入」才有東西，逐日打 API 才畫得出圖 —— 所以之前完全
+   * 沒有測到。這裡改成直接把一段假的經驗歷史塞進 localStorage：
+   * renderExp 的 draw() 讀的就是那裡，一次 API 都不用打。
+   *
+   * 假資料故意做出三種情況：正常成長、升級當天、以及完全沒動的一天
+   * （成長 0，長條不會畫出來，只剩 x 軸標籤）。
+   */
+  var EXP_PLAN = [
+    [292, 10.50], [292, 45.20], [292, 88.90], [293, 12.30],
+    [293, 60.10], [293, 60.10], [294, 5.00],
+  ];
+  // 第 4 與第 7 天各升一級；第 6 天跟第 5 天一模一樣＝當天沒成長
+  var EXP_WANT = { days: 7, points: 6, bars: 5, lvups: 2, zero: 1 };
+
+  function seedExp() {
+    var store = {};
+    var base = new Date(Date.now() + 8 * 3600 * 1000);   // UTC+8
+    base.setUTCDate(base.getUTCDate() - 1);              // latestDataDate()
+    var dates = [];
+    for (var k = 0; k < EXP_PLAN.length; k++) {
+      var dd = new Date(base);
+      dd.setUTCDate(dd.getUTCDate() - (EXP_PLAN.length - 1 - k));
+      var iso = dd.toISOString().slice(0, 10);
+      dates.push(iso);
+      store[iso] = { lv: EXP_PLAN[k][0], exp: 1000000 * (k + 1), rate: EXP_PLAN[k][1] };
+    }
+    localStorage.setItem('tms.exp.' + OCID, JSON.stringify(store));
+    return dates;
+  }
+
+  /** 圖表的 x 軸標籤。跟 y 軸刻度同一個 class，靠 text-anchor 分開 */
+  function xAxisLabels(svg) {
+    return Array.prototype.slice.call(svg.querySelectorAll('text.axis'))
+      .filter(function (t) { return t.getAttribute('text-anchor') === 'middle'; });
+  }
+
+  async function runExp() {
+    await lookup();
+    head();
+
+    var dates = seedExp();
+
+    var tab = $$('.tab').filter(function (t) {
+      return t.textContent.trim() === '經驗';
+    })[0];
+    if (!tab) { log.push('*** 找不到經驗分頁 ***'); return; }
+    tab.click();
+    await sleep(800);
+
+    log.push('');
+    log.push('經驗追蹤（塞了 ' + EXP_WANT.days + ' 天假資料，不打 API）');
+
+    var rows = $$('.panel.active .explist-row');
+    check('逐日清單列數', rows.length, EXP_WANT.days);
+
+    var svg = $('.panel.active svg.chart');
+    check('有長條圖', svg ? '有' : '無', '有');
+    if (svg) {
+      check('長條數（沒成長的那天不畫）',
+        svg.querySelectorAll('path.bar').length, EXP_WANT.bars);
+      check('升級標記數', svg.querySelectorAll('text.lvup').length, EXP_WANT.lvups);
+
+      /* x 軸標籤。踩過的坑：draw() already 把日期切成「08-21」了，
+         圖表裡又 slice(5) 一次就變成空字串 —— 整條 x 軸的標籤會全部
+         消失，但長條、tooltip、表格都照常，所以肉眼很難認定是壞掉。
+         這裡驗「標籤存在而且不是空的」。 */
+      /* y 軸刻度與 x 軸標籤同樣是 text.axis，y 座標又剛好接近（零線的
+         刻度和 x 標籤只差十幾 px），只能靠對齊方式分：y 軸靠右 end，
+         x 軸置中 middle。 */
+      var xlab = xAxisLabels(svg);
+      check('x 軸有標籤', xlab.length, EXP_WANT.points);
+      check('x 軸標籤都不是空的',
+        xlab.filter(function (t) { return t.textContent.trim() !== ''; }).length,
+        xlab.length);
+      log.push('  x 軸：' + xlab.map(function (t) {
+        return t.textContent.trim() || '（空）';
+      }).join('　'));
+    }
+
+    var det = $('.panel.active .exp-table');
+    check('有「表格檢視」', det ? '有' : '無', '有');
+    if (det) {
+      det.open = true;
+      await sleep(250);
+      var trs = det.querySelectorAll('tbody tr');
+      check('表格列數', trs.length, EXP_WANT.points);
+
+      /* 表格是圖表的等價替代，兩邊講的必須是同一組日期 —— 只是排序相反
+         （圖表由舊到新，表格新的在上），所以反過來比。 */
+      var tdates = Array.prototype.slice.call(trs).map(function (tr) {
+        return tr.children[0].textContent.trim();
+      });
+      var same = svg
+        ? tdates.slice().reverse().join(',') === xAxisLabels(svg)
+            .map(function (t) { return t.textContent.trim(); }).join(',')
+        : false;
+      check('表格與圖表是同一組日期', same ? '是' : '否', '是');
+
+      var zero = Array.prototype.slice.call(trs).filter(function (tr) {
+        return tr.children[1].textContent.indexOf('+0.00') !== -1;
+      });
+      check('沒成長的那天仍列在表格裡', zero.length, EXP_WANT.zero);
+      log.push('  首列：' + Array.prototype.slice.call(trs[0].children)
+        .map(function (td) { return td.textContent.trim(); }).join('　｜　'));
+    }
+    log.push('');
+    log.push('  資料範圍：' + dates[0] + ' ~ ' + dates[dates.length - 1]);
+  }
+
   async function runSoul() {
     await lookup();
     head();
@@ -566,6 +678,7 @@
       else if (mode === 'fold') await runFold();
       else if (mode === 'hexa') await runHexa();
       else if (mode === 'soul') await runSoul();
+      else if (mode === 'exp') await runExp();
       else await runTabs();
     } catch (e) {
       log.push('ERROR ' + e.message);

@@ -14,6 +14,7 @@ fixtures。這一點很重要：先前用手寫的樣板測，結果漏掉了沒
     python tools/rwd_scan.py --mode compare      裝備比對
     python tools/rwd_scan.py --mode hexa         六轉進度
     python tools/rwd_scan.py --mode soul         靈魂武器
+    python tools/rwd_scan.py --mode exp          經驗追蹤
     python tools/rwd_scan.py --widths 375        只測一個寬度
     python tools/rwd_scan.py --shot 1            截圖第 1 個分頁（裝備）
     python tools/rwd_scan.py --shot 1 --widths 1100    桌機版對照
@@ -117,7 +118,8 @@ def extract_diag(dom_bytes):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", default="tabs", choices=["tabs", "compare", "fold", "hexa", "soul"])
+    ap.add_argument("--mode", default="tabs",
+                    choices=["tabs", "compare", "fold", "hexa", "soul", "exp"])
     ap.add_argument("--widths", default="375,360,320",
                     help="CSS 寬度，逗號分隔。320 是最窄的實機，360 是多數 Android")
     ap.add_argument("--shot", type=int, default=None,
