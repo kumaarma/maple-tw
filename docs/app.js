@@ -3220,9 +3220,22 @@ function gainInLevels(prev, cur) {
   return dl + dr / 100;
 }
 
+/**
+ * 成長數字要留幾位小數。
+ *
+ * 寫死兩位不行。Lv.295 一天只前進 0.005～0.02 級，兩位小數會把整欄壓成
+ * 0.00／0.01／0.02 —— 實測某天練了 4.1 兆經驗、另一天只有 0.4 兆，差 10 倍，
+ * 表格上兩天都是「+0.00 級」，而圖表的長條高度是對的，兩邊就對不起來。
+ * 低等級一天跳好幾級時反而不需要那麼多位，所以跟著數量級走。
+ */
+function levelDp(v) {
+  const a = Math.abs(v);
+  return a >= 1 ? 2 : a >= 0.1 ? 3 : 4;
+}
+
 function fmtLevels(v) {
   if (v === null || !Number.isFinite(v)) return '—';
-  return (v >= 0 ? '+' : '') + v.toFixed(2) + ' 級';
+  return (v >= 0 ? '+' : '') + v.toFixed(levelDp(v)) + ' 級';
 }
 
 function renderExp() {
@@ -3432,7 +3445,8 @@ function expChart(points) {
       class: (Math.abs(v) < 1e-9 ? 'grid zero' : 'grid'),
     }));
     const t = mk('text', { x: padL - 9, y: y(v) + 4, class: 'axis', 'text-anchor': 'end' });
-    t.textContent = v.toFixed(2);
+    // 三條刻度共用一個位數（看最大值），不然上下標籤的小數位會參差
+    t.textContent = v.toFixed(levelDp(hi || lo));
     svg.appendChild(t);
   });
 
@@ -3477,7 +3491,7 @@ function expChart(points) {
         x: x + barW / 2, y: y(v) - (p.leveled > 0 ? 18 : 6),
         class: 'barlabel', 'text-anchor': 'middle',
       });
-      lab.textContent = v.toFixed(2);
+      lab.textContent = v.toFixed(levelDp(v));
       svg.appendChild(lab);
     }
 

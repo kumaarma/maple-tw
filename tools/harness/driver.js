@@ -496,12 +496,16 @@
    * 假資料故意做出三種情況：正常成長、升級當天、以及完全沒動的一天
    * （成長 0，長條不會畫出來，只剩 x 軸標籤）。
    */
+  /* 用高等級的數字：Lv.294 附近一天只前進百分之幾級。低等級那種一天跳
+     半級的假資料測不出精度問題 —— 成長值本來就夠大，兩位小數也分得開。 */
   var EXP_PLAN = [
-    [292, 10.50], [292, 45.20], [292, 88.90], [293, 12.30],
-    [293, 60.10], [293, 60.10], [294, 5.00],
+    [294, 99.20], [294, 99.69], [295, 0.49], [295, 1.31],
+    [295, 1.31], [295, 1.93], [295, 2.71],
   ];
-  // 第 4 與第 7 天各升一級；第 6 天跟第 5 天一模一樣＝當天沒成長
-  var EXP_WANT = { days: 7, points: 6, bars: 5, lvups: 2, zero: 1 };
+  /* 逐日成長：0.0049、0.0080（跨等級）、0.0082、0.0000、0.0062、0.0078。
+     六個值互不相同，但四捨五入到兩位小數只剩 0.00 與 0.01 兩種 ——
+     這就是精度不足時表格會塌掉的樣子。 */
+  var EXP_WANT = { days: 7, points: 6, bars: 5, lvups: 1, zero: 1 };
 
   function seedExp() {
     var store = {};
@@ -588,9 +592,21 @@
       check('表格與圖表是同一組日期', same ? '是' : '否', '是');
 
       var zero = Array.prototype.slice.call(trs).filter(function (tr) {
-        return tr.children[1].textContent.indexOf('+0.00') !== -1;
+        // 位數會跟著數量級變，不能比字串前綴 —— 「+0.0078」也是 +0.00 開頭
+        return parseFloat(tr.children[1].textContent.replace('+', '')) === 0;
       });
       check('沒成長的那天仍列在表格裡', zero.length, EXP_WANT.zero);
+
+      /* 成長欄的精度。踩過的坑：fmtLevels() 寫死 toFixed(2)，但高等級一天
+         只前進百分之幾級 —— 練了 4.1 兆經驗和只練 0.4 兆的兩天都會寫成
+         「+0.00 級」，而圖表的長條高度是對的，兩邊就對不起來。
+         假資料的六天成長各不相同，所以顯示出來也必須各不相同。 */
+      var gains = Array.prototype.slice.call(trs).map(function (tr) {
+        return tr.children[1].textContent.trim();
+      });
+      var uniq = gains.filter(function (g, i) { return gains.indexOf(g) === i; });
+      check('每天的成長值分得出來', uniq.length, EXP_WANT.points);
+      log.push('  成長欄：' + gains.join('　'));
       log.push('  首列：' + Array.prototype.slice.call(trs[0].children)
         .map(function (td) { return td.textContent.trim(); }).join('　｜　'));
     }
