@@ -3221,21 +3221,24 @@ function gainInLevels(prev, cur) {
 }
 
 /**
- * 成長數字要留幾位小數。
+ * 成長數字要留幾位小數。輸入是級份，位數是算給百分比用的。
  *
- * 寫死兩位不行。Lv.295 一天只前進 0.005～0.02 級，兩位小數會把整欄壓成
- * 0.00／0.01／0.02 —— 實測某天練了 4.1 兆經驗、另一天只有 0.4 兆，差 10 倍，
- * 表格上兩天都是「+0.00 級」，而圖表的長條高度是對的，兩邊就對不起來。
- * 低等級一天跳好幾級時反而不需要那麼多位，所以跟著數量級走。
+ * 以前直接拿「級份」顯示、且寫死兩位小數時會出事：Lv.295 一天只前進
+ * 0.005～0.02 級，整欄被壓成 0.00／0.01／0.02 —— 實測某天練了 4.1 兆經驗、
+ * 另一天只有 0.4 兆，差 10 倍卻都寫成「+0.00 級」，而圖表的長條高度是對的，
+ * 兩邊就對不起來。改用百分比後同樣兩位小數就是 0.50%～2.00%，分得開了。
+ * 位數還是跟著數量級走：低等級一天跳好幾級是 200% 以上，這時小數位只是雜訊。
+ * 三段門檻由舊的 2／3／4 位換算而來，解析度仍是 1%／0.1%／0.01%。
  */
-function levelDp(v) {
-  const a = Math.abs(v);
-  return a >= 1 ? 2 : a >= 0.1 ? 3 : 4;
+function pctDp(v) {
+  const a = Math.abs(v) * 100;
+  return a >= 100 ? 0 : a >= 10 ? 1 : 2;
 }
 
-function fmtLevels(v) {
+/** 成長一律以「本級進度的百分比」呈現，跨等級時會超過 100% */
+function fmtPct(v) {
   if (v === null || !Number.isFinite(v)) return '—';
-  return (v >= 0 ? '+' : '') + v.toFixed(levelDp(v)) + ' 級';
+  return (v >= 0 ? '+' : '') + (v * 100).toFixed(pctDp(v)) + '%';
 }
 
 function renderExp() {
@@ -3390,9 +3393,10 @@ function expListView(rows) {
 
     const g = el('span', 'el-gain');
     if (r.gain !== null && Number.isFinite(r.gain)) {
-      const v = r.gain * 100;
-      g.appendChild(el('span', 'el-gainval' + (Math.abs(v) < 0.005 ? ' zero' : ''),
-        '[' + (v >= 0 ? '+' : '') + v.toFixed(2) + '%]'));
+      // 「顯示成零」才算零，門檻得跟著 pctDp() 選的位數走，不能寫死
+      const txt = fmtPct(r.gain);
+      g.appendChild(el('span', 'el-gainval' + (parseFloat(txt) === 0 ? ' zero' : ''),
+        '[' + txt + ']'));
       if (r.leveled > 0) {
         g.appendChild(el('span', 'el-lvup', '▲' + (r.leveled > 1 ? r.leveled : '')));
       }
@@ -3422,7 +3426,7 @@ function expChart(points) {
   svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
   svg.setAttribute('class', 'chart');
   svg.setAttribute('role', 'img');
-  svg.setAttribute('aria-label', '每日經驗成長長條圖，單位為級份');
+  svg.setAttribute('aria-label', '每日經驗成長長條圖，單位為本級進度百分比');
 
   const vals = points.map((p) => (Number.isFinite(p.gain) ? p.gain : 0));
   const hi = Math.max(0, Math.max.apply(null, vals));
@@ -3446,7 +3450,7 @@ function expChart(points) {
     }));
     const t = mk('text', { x: padL - 9, y: y(v) + 4, class: 'axis', 'text-anchor': 'end' });
     // 三條刻度共用一個位數（看最大值），不然上下標籤的小數位會參差
-    t.textContent = v.toFixed(levelDp(hi || lo));
+    t.textContent = (v * 100).toFixed(pctDp(hi || lo)) + '%';
     svg.appendChild(t);
   });
 
@@ -3491,7 +3495,7 @@ function expChart(points) {
         x: x + barW / 2, y: y(v) - (p.leveled > 0 ? 18 : 6),
         class: 'barlabel', 'text-anchor': 'middle',
       });
-      lab.textContent = v.toFixed(levelDp(v));
+      lab.textContent = (v * 100).toFixed(pctDp(v)) + '%';
       svg.appendChild(lab);
     }
 
@@ -3523,7 +3527,7 @@ function expChart(points) {
   function showTip(p, node) {
     tip.innerHTML = '';
     tip.appendChild(el('div', 'tt-date', p.date));
-    tip.appendChild(el('div', 'tt-main', fmtLevels(p.gain)));
+    tip.appendChild(el('div', 'tt-main', fmtPct(p.gain)));
     const sub = ['Lv.' + p.lv];
     if (p.leveled > 0) sub.push('升 ' + p.leveled + ' 級');
     if (p.expDelta !== null) sub.push('EXP ' + (p.expDelta >= 0 ? '+' : '') + num(p.expDelta));
@@ -3553,7 +3557,7 @@ function expTable(points) {
   const table = el('table', 'rank');
   const thead = el('thead');
   const htr = el('tr');
-  ['日期', '成長（級份）', '等級', '升級', 'EXP 增減'].forEach((h) => {
+  ['日期', '成長（%）', '等級', '升級', 'EXP 增減'].forEach((h) => {
     htr.appendChild(el('th', null, h));
   });
   thead.appendChild(htr);
@@ -3563,7 +3567,7 @@ function expTable(points) {
   points.slice().reverse().forEach((p) => {
     const tr = el('tr');
     tr.appendChild(el('td', null, p.date));
-    tr.appendChild(el('td', null, fmtLevels(p.gain)));
+    tr.appendChild(el('td', null, fmtPct(p.gain)));
     tr.appendChild(el('td', null, 'Lv.' + p.lv));
     tr.appendChild(el('td', null, p.leveled > 0 ? '+' + p.leveled : '—'));
     tr.appendChild(el('td', null,

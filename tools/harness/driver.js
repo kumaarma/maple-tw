@@ -597,9 +597,10 @@
       });
       check('沒成長的那天仍列在表格裡', zero.length, EXP_WANT.zero);
 
-      /* 成長欄的精度。踩過的坑：fmtLevels() 寫死 toFixed(2)，但高等級一天
-         只前進百分之幾級 —— 練了 4.1 兆經驗和只練 0.4 兆的兩天都會寫成
-         「+0.00 級」，而圖表的長條高度是對的，兩邊就對不起來。
+      /* 成長欄的精度。踩過的坑：早期用「級份」顯示、位數寫死 toFixed(2)，
+         但高等級一天只前進百分之幾級 —— 練了 4.1 兆經驗和只練 0.4 兆的兩天
+         都會寫成「+0.00 級」，而圖表的長條高度是對的，兩邊就對不起來。
+         現在整張分頁統一用 %（pctDp / fmtPct），但位數依舊跟著數量級走，還是要驗。
          假資料的六天成長各不相同，所以顯示出來也必須各不相同。 */
       var gains = Array.prototype.slice.call(trs).map(function (tr) {
         return tr.children[1].textContent.trim();
