@@ -3325,6 +3325,151 @@ function renderHexaProgress(cores, stat, icons, cls) {
   return f;
 }
 
+/**
+ * HEXA 矩陣的六邊形版面。
+ *
+ * 座標是從遊戲畫面量出來的：四個叢集圍著中央的「VI」，各自 6／4／4／4 格，
+ * 一共 18 格。填得滿的正好 12 格，跟 HEXA_EXPECT（技能 2、精通 4、強化 4、
+ * 共用 2）對得上；多出來的 6 格是台版還沒開放的內容，畫成上鎖。
+ *
+ * 叢集對應哪一種核心是照數量推的（2 格的配 2 顆、4 格的配 4 顆）——
+ * 兩個 4 格叢集哪個是精通、哪個是強化，畫面上分不出來，需要人工確認。
+ * 所以每個叢集旁邊標了類型名，錯了一眼就看得到。
+ */
+const HEXA_HEX = 68;                 // 六邊形中心到頂點
+const HEXA_MATRIX = [
+  /* slots 的順序＝填入順序，所以要把「遊戲裡有東西的那幾格」排前面。
+     技能核心在遊戲裡是填靠近中心的下排兩格，上面四格是鎖住的。 */
+  { type: '技能核心', label: [222, 205],
+    slots: [[295, 535], [435, 535], [150, 300], [295, 300], [222, 420], [365, 420]] },
+  { type: '精通核心', label: [838, 205],
+    slots: [[905, 300], [700, 420], [838, 420], [630, 535]] },
+  { type: '強化核心', label: [222, 1160],
+    slots: [[435, 820], [222, 945], [362, 945], [150, 1065]] },
+  { type: '共用核心', label: [838, 1160],
+    slots: [[630, 820], [700, 945], [840, 945], [910, 1065]] },
+];
+const HEXA_CENTER = [530, 690];
+
+/** 平頂六邊形的路徑 */
+function hexPath(cx, cy, s) {
+  const pts = [];
+  for (let i = 0; i < 6; i++) {
+    const a = (Math.PI / 180) * (60 * i);
+    pts.push((cx + s * Math.cos(a)).toFixed(1) + ',' + (cy + s * Math.sin(a)).toFixed(1));
+  }
+  return 'M' + pts.join('L') + 'Z';
+}
+
+function hexaMatrix(cores, icons) {
+  const NS = 'http://www.w3.org/2000/svg';
+  // attrs 要有預設值 —— <title> 是不帶屬性的，Object.keys(undefined) 會炸
+  const mk = (tag, attrs) => {
+    const n = document.createElementNS(NS, tag);
+    Object.keys(attrs || {}).forEach((k) => n.setAttribute(k, attrs[k]));
+    return n;
+  };
+
+  const byType = {};
+  (cores || []).forEach((c) => {
+    const t = c.hexa_core_type || '其他';
+    (byType[t] = byType[t] || []).push(c);
+  });
+
+  const svg = mk('svg', {
+    viewBox: '60 130 1000 1090',
+    class: 'hexmx',
+    role: 'img',
+    'aria-label': 'HEXA 矩陣，' + (cores || []).length + ' 顆核心',
+  });
+
+  /* 中央的 VI */
+  svg.appendChild(mk('path', {
+    d: hexPath(HEXA_CENTER[0], HEXA_CENTER[1], 62), class: 'hexmx-core',
+  }));
+  const vi = mk('text', {
+    x: HEXA_CENTER[0], y: HEXA_CENTER[1] + 16,
+    'text-anchor': 'middle', class: 'hexmx-vi',
+  });
+  vi.textContent = 'VI';
+  svg.appendChild(vi);
+
+  let left = 0;
+  HEXA_MATRIX.forEach((cluster, ci) => {
+    const list = (byType[cluster.type] || []).slice();
+
+    /* 叢集到中心的連線 —— 遊戲裡有，能看出哪幾格是一組 */
+    cluster.slots.forEach(([x, y]) => {
+      svg.appendChild(mk('line', {
+        x1: HEXA_CENTER[0], y1: HEXA_CENTER[1], x2: x, y2: y, class: 'hexmx-link',
+      }));
+    });
+
+    cluster.slots.forEach(([x, y]) => {
+      const core = list.shift() || null;
+      const g = mk('g', { class: 'hexmx-slot' + (core ? '' : ' locked') });
+
+      g.appendChild(mk('path', {
+        d: hexPath(x, y, HEXA_HEX), class: 'hexmx-hex t' + ci,
+      }));
+
+      if (core) {
+        const icon = hexaCoreIcon(core, icons);
+        if (icon) {
+          const im = mk('image', {
+            href: icon, x: x - 34, y: y - 30, width: 68, height: 68,
+            preserveAspectRatio: 'xMidYMid meet',
+          });
+          g.appendChild(im);
+        }
+        /* 等級徽章壓在上緣，跟遊戲一樣 */
+        g.appendChild(mk('rect', {
+          x: x - 24, y: y - 62, width: 48, height: 26, rx: 6, class: 'hexmx-lvbg',
+        }));
+        const lv = mk('text', {
+          x: x, y: y - 43, 'text-anchor': 'middle', class: 'hexmx-lv',
+        });
+        lv.textContent = lvNum(core.hexa_core_level);
+        g.appendChild(lv);
+
+        const t = mk('title');
+        t.textContent = core.hexa_core_name + '（Lv.' + lvNum(core.hexa_core_level) + '）';
+        g.appendChild(t);
+      } else {
+        left++;
+        /* 上鎖：畫一個簡單的掛鎖 */
+        g.appendChild(mk('rect', {
+          x: x - 18, y: y - 4, width: 36, height: 28, rx: 5, class: 'hexmx-lock',
+        }));
+        g.appendChild(mk('path', {
+          d: 'M' + (x - 10) + ',' + (y - 4) + 'v-9a10,10 0 0 1 20,0v9',
+          class: 'hexmx-lockarc',
+        }));
+        const t = mk('title');
+        t.textContent = cluster.type + '（台版尚未開放）';
+        g.appendChild(t);
+      }
+      svg.appendChild(g);
+    });
+
+    /* 叢集類型標籤。遊戲沒有，但這裡分不出顏色代表什麼，標了才讀得懂 */
+    const lb = mk('text', {
+      x: cluster.label[0], y: cluster.label[1],
+      'text-anchor': 'middle', class: 'hexmx-cluster',
+    });
+    lb.textContent = cluster.type + '（' + (byType[cluster.type] || []).length + '）';
+    svg.appendChild(lb);
+  });
+
+  const wrap = el('div', 'hexmx-wrap');
+  wrap.appendChild(svg);
+  if (left) {
+    wrap.appendChild(el('p', 'hint',
+      '上鎖的 ' + left + ' 格是遊戲版面上有、但台版還沒開放的核心。'));
+  }
+  return wrap;
+}
+
 function renderHexa() {
   const f = frag();
   const hexa = d('hexa');
@@ -3345,6 +3490,8 @@ function renderHexa() {
   }
 
   if (cores && cores.length) {
+    f.appendChild(title('HEXA 矩陣'));
+    f.appendChild(gamePanel('HEXA 矩陣', hexaMatrix(cores, icons)));
 
     /* 依核心類型分組 */
     const groups = {};

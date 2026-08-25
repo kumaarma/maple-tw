@@ -94,6 +94,48 @@ a { color: var(--accent); }
   .ov-cols .gpanel { max-width: none; }
 }
 
+/* ---------- HEXA 矩陣（六邊形版面）---------- */
+
+/* viewBox 負責縮放，所以同一份座標在 1100px 與 375px 都放得下 ——
+   不用為手機另寫一套版面。 */
+.hexmx-wrap { max-width: 620px; }
+.hexmx { width: 100%; height: auto; display: block; }
+
+/* 中央的 VI */
+.hexmx-core { fill: rgba(255, 154, 60, .10); stroke: var(--accent-dim); stroke-width: 3; }
+.hexmx-vi {
+  fill: var(--accent);
+  font-size: 46px;
+  font-weight: 700;
+  letter-spacing: 2px;
+}
+
+/* 叢集到中心的連線，退在背景 */
+.hexmx-link { stroke: var(--line); stroke-width: 2; }
+
+/* 四種核心各一個色相。四個都是在暗底上的填色塊，不是文字，
+   所以看的是能不能彼此分辨，而不是 4.5:1。 */
+.hexmx-hex { stroke-width: 3; }
+.hexmx-hex.t0 { fill: rgba(139, 92, 246, .22); stroke: #8b5cf6; }   /* 技能 紫 */
+.hexmx-hex.t1 { fill: rgba(224, 76, 122, .22); stroke: #e04c7a; }   /* 精通 洋紅 */
+.hexmx-hex.t2 { fill: rgba(56, 189, 248, .22); stroke: #38bdf8; }   /* 強化 藍 */
+.hexmx-hex.t3 { fill: rgba(148, 163, 184, .20); stroke: #94a3b8; }  /* 共用 銀 */
+
+/* 沒開的格子整個壓暗，才看得出跟已開的差別 */
+.hexmx-slot.locked .hexmx-hex { fill: rgba(255, 255, 255, .03); stroke: var(--line); }
+.hexmx-lock { fill: none; stroke: var(--muted); stroke-width: 3; }
+.hexmx-lockarc { fill: none; stroke: var(--muted); stroke-width: 3; }
+
+/* 等級徽章壓在六邊形上緣 */
+.hexmx-lvbg { fill: rgba(6, 8, 13, .82); stroke: var(--line); stroke-width: 1.5; }
+.hexmx-lv { fill: var(--text); font-size: 17px; font-weight: 700; }
+
+.hexmx-cluster { fill: var(--muted); font-size: 26px; }
+
+/* 滑鼠移上去給一點回饋 —— 每一格都有 <title>，停著就看得到核心名稱 */
+.hexmx-slot { cursor: help; }
+.hexmx-slot:hover .hexmx-hex { filter: brightness(1.35); }
+
 /* ---------- 面板頂層分頁（裝備／寵物）---------- */
 
 /* 跟預設組共用 presetTabs 的邏輯，但外觀要分得開 —— 兩層都做成膠囊
