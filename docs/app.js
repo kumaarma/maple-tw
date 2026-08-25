@@ -424,8 +424,10 @@ async function lookup(name, date) {
 }
 
 const TABS = [
-  ['總覽',     ['basic', 'stat', 'popularity', 'ability', 'hyperStat', 'propensity', 'dojang'], renderOverview],
-  ['裝備',     ['equip', 'setEffect'],                          renderEquip],
+  /* 裝備併進總覽了，不再另立分頁 —— 預設組切換就在 EQUIPMENT 面板裡。
+     代價是 setEffect 也變成一定會抓（套裝效果跟著搬過來）。 */
+  ['總覽',     ['basic', 'stat', 'popularity', 'ability', 'hyperStat', 'propensity', 'dojang',
+               'equip', 'setEffect'], renderOverview],
   ['造型',     ['beauty', 'android', 'cash'],                   renderCosmetic],
   ['寵物',     ['pet'],                                         renderPets],
   ['萌獸',     ['familiar'],                                    renderFamiliar],
@@ -844,6 +846,16 @@ function addStatPair(box, pair, valueOf, labelOf) {
   });
 }
 
+/** 仿遊戲視窗的外框：標題列 + 內容。統一從這裡出，樣式才不會各寫一份 */
+function gamePanel(head, body) {
+  const panel = el('div', 'gpanel');
+  panel.appendChild(el('div', 'gpanel-head', head));
+  const inner = el('div', 'gpanel-body');
+  inner.appendChild(body);
+  panel.appendChild(inner);
+  return panel;
+}
+
 function statGamePanel(stat) {
   const map = {};
   stat.final_stat.forEach((s) => { map[s.stat_name] = s.stat_value; });
@@ -890,6 +902,145 @@ function statGamePanel(stat) {
   wrap.appendChild(panel);
   if (extra) wrap.appendChild(extra);
   return wrap;
+}
+
+/* 內在潛能的等級配色，跟遊戲 ABILITY 面板一致：傳說綠、罕見橘、稀有紫。
+   API 這三個字串是從實際回傳撈出來確認的，不是照潛能那套猜的 —— 潛能有
+   史詩，內在潛能沒有。 */
+const ABILITY_GRADE = { '傳說': 'legend', '罕見': 'unique', '稀有': 'rare', '特殊': 'special' };
+
+/**
+ * 內在潛能畫成一行一條的顏色橫條。
+ *
+ * 原本是 kv 卡片，等級只是標籤上的兩個字。遊戲裡等級是靠整條的顏色講的，
+ * 一眼就分得出哪一行是傳說。顏色之外仍然把等級寫出來 —— 只靠顏色傳達
+ * 資訊的話，色覺障礙的人就讀不到了。
+ */
+function abilityBars(info) {
+  const box = el('div', 'abars');
+  info.forEach((a) => {
+    const g = ABILITY_GRADE[a.ability_grade] || 'special';
+    const row = el('div', 'abar ab-' + g);
+    row.appendChild(el('span', 'abar-grade', txt(a.ability_grade)));
+    row.appendChild(el('span', 'abar-text', txt(a.ability_value)));
+    box.appendChild(row);
+  });
+  return box;
+}
+
+/**
+ * 性向的六角雷達圖。
+ *
+ * 六個數值攤成六張卡片時，看得到數字卻看不出偏重哪一項。雷達圖把六項
+ * 一起畫出來，形狀本身就是答案。滿級是 100，所以軸長固定 0~100 ——
+ * 用當下最大值當軸長的話，全部 60 跟全部 100 會畫出一模一樣的圖。
+ */
+function propensityRadar(rows) {
+  const NS = 'http://www.w3.org/2000/svg';
+  const MAX = 100;
+  const W = 300, C = 150, R = 96;
+  const wrap = el('div', 'radar-wrap');
+
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + W);
+  svg.setAttribute('class', 'radar');
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', '性向雷達圖：'
+    + rows.map((r) => r[0] + ' ' + n0(r[1])).join('、'));
+
+  const mk = (tag, attrs) => {
+    const n = document.createElementNS(NS, tag);
+    Object.keys(attrs).forEach((k) => n.setAttribute(k, attrs[k]));
+    return n;
+  };
+  // 12 點鐘方向起算，順時針
+  const at = (i, r) => {
+    const th = -Math.PI / 2 + (Math.PI * 2 * i) / rows.length;
+    return [C + Math.cos(th) * r, C + Math.sin(th) * r];
+  };
+  const poly = (r) => rows.map((_, i) => at(i, r).join(',')).join(' ');
+
+  /* 背景格線：四圈 */
+  [0.25, 0.5, 0.75, 1].forEach((f) => {
+    svg.appendChild(mk('polygon', { points: poly(R * f), class: 'radar-grid' }));
+  });
+  rows.forEach((_, i) => {
+    const [x, y] = at(i, R);
+    svg.appendChild(mk('line', { x1: C, y1: C, x2: x, y2: y, class: 'radar-grid' }));
+  });
+
+  /* 數值 */
+  const pts = rows.map((r, i) => at(i, R * Math.max(0, Math.min(n0(r[1]), MAX)) / MAX));
+  svg.appendChild(mk('polygon', {
+    points: pts.map((p) => p.join(',')).join(' '), class: 'radar-area',
+  }));
+  pts.forEach((p) => svg.appendChild(mk('circle', {
+    cx: p[0], cy: p[1], r: 2.5, class: 'radar-dot',
+  })));
+
+  /* 軸標籤 */
+  rows.forEach((r, i) => {
+    const [x, y] = at(i, R + 18);
+    const t = mk('text', {
+      x: x, y: y + 4, class: 'radar-label',
+      'text-anchor': Math.abs(x - C) < 6 ? 'middle' : (x > C ? 'start' : 'end'),
+    });
+    t.textContent = r[0] + ' ' + n0(r[1]);
+    svg.appendChild(t);
+  });
+
+  wrap.appendChild(svg);
+  return wrap;
+}
+
+/** 身分資訊的一排 chip。值是空的就不放那一顆 */
+function idChips(pairs) {
+  const box = el('div', 'idchips');
+  pairs.forEach(([k, v]) => {
+    if (v === null || v === undefined || v === '' || v === '—') return;
+    const chip = el('span', 'idchip');
+    chip.appendChild(el('span', 'idchip-k', k));
+    chip.appendChild(el('span', 'idchip-v', v));
+    box.appendChild(chip);
+  });
+  return box;
+}
+
+/**
+ * 裝備面板：預設組切換 + 該組的格線。
+ *
+ * 預設組原本在「裝備」分頁自己一列，跟能力值分開兩個地方看。併進同一個
+ * 視窗之後就跟遊戲一樣了 —— 遊戲的 EQUIPMENT 視窗底部就是 PRESETS 1 2 3。
+ */
+function overviewEquip() {
+  const equip = d('equip');
+  if (!equip || !Array.isArray(equip.item_equipment) || !equip.item_equipment.length) {
+    return null;
+  }
+
+  /* 目前穿戴之外，API 另外回傳三組預設，實測三組內容都不一樣 */
+  const presetArrays = [1, 2, 3].map((i) => {
+    const arr = equip['item_equipment_preset_' + i];
+    return (Array.isArray(arr) && arr.length) ? arr : null;
+  });
+  // 圖騰、拼圖、寶石不隨分頁換裝，補回各預設組，否則切過去會整批不見
+  const fixed = presetFixedItems(equip.item_equipment, presetArrays.filter(Boolean));
+
+  const defs = [{ label: '目前穿戴', build: () => equipContent(equip.item_equipment) }];
+  presetLabels(3, equip.preset_no).forEach((label, i) => {
+    const arr = presetArrays[i];
+    if (arr) defs.push({ label: label, build: () => equipContent(arr.concat(fixed)) });
+  });
+
+  const panel = el('div', 'gpanel gpanel-eq');
+  panel.appendChild(el('div', 'gpanel-head', 'EQUIPMENT'));
+  const body = el('div', 'gpanel-body');
+  body.appendChild(presetTabs(defs, 0));
+  panel.appendChild(body);
+
+  const col = el('div', 'ov-col ov-col-eq');
+  col.appendChild(panel);
+  return col;
 }
 
 function kvGrid(pairs) {
@@ -1121,13 +1272,14 @@ function renderOverview() {
   // 角色卡上的「最後活動」需要經驗快照才算得出來，這裡只判斷有沒有資料
   const hasExp = OCID ? !!lastActiveFromExp(OCID, null) : false;
 
+  /* 一排 chip，不是八張卡。八張裡有六張跟上方角色卡一字不差 —— 同一份
+     資料佔兩塊版面，手機上要多捲一整屏才看得到下面的能力值。 */
   f.appendChild(title('角色'));
-  f.appendChild(kvGrid([
-    ['角色名稱', txt(basic.character_name)],
+  f.appendChild(idChips([
     ['世界', txt(basic.world_name)],
     ['職業', txt(basic.character_class)],
     ['轉職階段', txt(basic.character_class_level)],
-    ['等級', basic.character_level ? 'Lv.' + basic.character_level : '—'],
+    ['等級', basic.character_level ? 'Lv.' + basic.character_level : null],
     ['性別', txt(basic.character_gender)],
     ['公會', txt(basic.character_guild_name)],
     ['解放進度', liberationLabel(basic.liberation_quest_clear)],
@@ -1141,10 +1293,32 @@ function renderOverview() {
   addErrors(f, ['basic', 'popularity', 'dojang']);
 
   if (stat && Array.isArray(stat.final_stat)) {
-    f.appendChild(title('綜合能力值'));
-    f.appendChild(statGamePanel(stat));
+    /* 屬性與裝備並排，跟遊戲裡兩個視窗開在一起一樣。桌機上屬性面板只有
+       640px，右邊整片空著；窄螢幕自動疊回上下。 */
+    f.appendChild(title('能力值與裝備'));
+    const cols = el('div', 'ov-cols');
+
+    const left = el('div', 'ov-col');
+    left.appendChild(statGamePanel(stat));
     if (stat.remain_ap !== undefined) {
-      f.appendChild(el('p', 'hint', '剩餘 AP：' + num(stat.remain_ap)));
+      left.appendChild(el('p', 'hint', '剩餘 AP：' + num(stat.remain_ap)));
+    }
+    cols.appendChild(left);
+
+    const eq = overviewEquip();
+    if (eq) cols.appendChild(eq);
+
+    f.appendChild(cols);
+    addErrors(f, ['equip']);
+
+    /* 套裝效果是全域的，不隨預設組改變，所以放在兩欄外面 */
+    const se = d('setEffect');
+    if (se && Array.isArray(se.set_effect) && se.set_effect.length) {
+      f.appendChild(title('套裝效果'));
+      f.appendChild(kvGrid(se.set_effect
+        .slice()
+        .sort((a, b) => n0(b.total_set_count) - n0(a.total_set_count))
+        .map((s) => [s.set_name, n0(s.total_set_count) + ' 件套'])));
     }
   } else {
     addErrors(f, ['stat']);
@@ -1178,7 +1352,10 @@ function renderOverview() {
     }
   }
 
-  if (ability) {
+  /* 潛能與性向並排。橫條拉滿整個寬度太長，雷達圖靠左又空掉右半邊，
+     兩個湊成一列剛好。兩份資料總覽本來就抓了，不用多打 API。 */
+  const abCol = (function () {
+    if (!ability) return null;
     const defs = [];
     presetLabels(3, ability.preset_no).forEach((label, i) => {
       const p = ability['ability_preset_' + (i + 1)];
@@ -1186,34 +1363,45 @@ function renderOverview() {
       if (!Array.isArray(info) || !info.length) return;
       defs.push({
         label: label + (p.ability_preset_grade ? '　' + p.ability_preset_grade : ''),
-        build: () => kvGrid(info.map((a) =>
-          ['第 ' + a.ability_no + ' 行 · ' + txt(a.ability_grade), txt(a.ability_value)])),
+        build: () => abilityBars(info),
       });
     });
 
+    let inner = null;
     if (defs.length) {
-      f.appendChild(title('潛能能力（' + txt(ability.ability_grade) + '）'));
-      f.appendChild(presetTabs(defs, Math.max(0, n0(ability.preset_no) - 1)));
+      inner = presetTabs(defs, Math.max(0, n0(ability.preset_no) - 1));
     } else if (Array.isArray(ability.ability_info)) {
-      f.appendChild(title('潛能能力（' + txt(ability.ability_grade) + '）'));
-      f.appendChild(kvGrid(ability.ability_info.map((a) =>
-        ['第 ' + a.ability_no + ' 行 · ' + txt(a.ability_grade), txt(a.ability_value)])));
+      inner = abilityBars(ability.ability_info);
     }
-    if (ability.remain_fame !== undefined) {
-      f.appendChild(el('p', 'hint', '剩餘名聲值：' + num(ability.remain_fame)));
-    }
-  }
+    if (!inner) return null;
 
-  if (propensity) {
-    f.appendChild(title('性向'));
-    f.appendChild(kvGrid([
-      ['領導力', num(propensity.charisma_level)],
-      ['感受性', num(propensity.sensibility_level)],
-      ['洞察力', num(propensity.insight_level)],
-      ['意志', num(propensity.willingness_level)],
-      ['手技', num(propensity.handicraft_level)],
-      ['魅力', num(propensity.charm_level)],
-    ]));
+    const col = el('div', 'ov-col');
+    col.appendChild(gamePanel('潛能能力（' + txt(ability.ability_grade) + '）', inner));
+    if (ability.remain_fame !== undefined) {
+      col.appendChild(el('p', 'hint', '剩餘名聲值：' + num(ability.remain_fame)));
+    }
+    return col;
+  }());
+
+  const prCol = propensity ? (function () {
+    const col = el('div', 'ov-col');
+    col.appendChild(gamePanel('性向', propensityRadar([
+      ['領導力', propensity.charisma_level],
+      ['感受性', propensity.sensibility_level],
+      ['洞察力', propensity.insight_level],
+      ['意志', propensity.willingness_level],
+      ['手技', propensity.handicraft_level],
+      ['魅力', propensity.charm_level],
+    ])));
+    return col;
+  }()) : null;
+
+  if (abCol || prCol) {
+    f.appendChild(title('潛能與性向'));
+    const cols = el('div', 'ov-cols ov-cols-even');
+    if (abCol) cols.appendChild(abCol);
+    if (prCol) cols.appendChild(prCol);
+    f.appendChild(cols);
   }
   return f;
 }
@@ -1326,16 +1514,6 @@ function soulWeapon(it) {
 }
 
 /** 一行摘要，給裝備卡片用 */
-function soulWeaponBrief(s) {
-  const parts = [];
-  if (s.name) parts.push(s.name);
-  if (s.grade) parts.push(s.grade + ' 階');
-  if (s.level) parts.push('Lv.' + s.level);
-  if (s.option) parts.push(s.option);
-  if (s.power) parts.push('共鳴 +' + num(s.power));
-  return parts.join('　');
-}
-
 function showItemTip(it) {
   const tip = $('#itemTip');
   tip.innerHTML = '';
@@ -1538,14 +1716,27 @@ function showItemTip(it) {
  * 值必須完全等於 API 的 item_equipment_slot；空字串代表該格不放東西。
  * 這是照遊戲裝備視窗排的重建版本，要調位置改這張表就好。
  */
+/* 位置照遊戲的裝備視窗，七欄六列。角色圖佔第 3～5 欄的第 1～4 列，
+   所以上半每列只有 c1、c2、c6、c7 四格；第五列開始才是通欄。
+
+   對應是照著遊戲畫面逐格核對來的，不是從圖示猜的 —— 遊戲的格子沒有
+   文字標籤，用猜的只會把裝備排到錯的位置。
+
+   欄位名要用 API 的原字串：褲子是「褲/裙」、副武器是「輔助武器」、
+   肩膀是「肩膀裝飾」、心臟是「機器心臟」。 */
 const EQUIP_GRID = [
-  ['戒指1',    '帽子',     '輔助特殊技能戒指', '披風'],
-  ['戒指2',    '臉飾',     '眼飾',           '上衣'],
-  ['戒指3',    '耳環',     '墜飾',           '褲/裙'],
-  ['戒指4',    '肩膀裝飾',  '墜飾2',          '鞋子'],
-  ['口袋道具',  '手套',     '腰帶',           '輔助武器'],
-  ['機器心臟',  '武器',     '勳章',           '胸章'],
-  ['徽章',     '寶石',     '',              ''],
+  //  c1        c2        c6          c7
+  ['戒指1',   '臉飾',   '帽子',     '披風'],
+  ['戒指2',   '眼飾',   '上衣',     '手套'],
+  ['戒指3',   '耳環',   '褲/裙',    '鞋子'],
+  ['戒指4',   '墜飾',   '肩膀裝飾', '勳章'],
+];
+
+/* 第五、六列通欄。第六列只有頭尾兩格有東西，中間留空格佔位 ——
+   桌機上位置才對得上，手機上那些空格會被收掉（見 style.css）。 */
+const EQUIP_ROWS_WIDE = [
+  ['腰帶', '墜飾2', '武器', '輔助武器', '徽章', '機器人', '機器心臟'],
+  ['口袋道具', '', '', '', '', '', '胸章'],
 ];
 
 /* 這幾類不在主裝備視窗裡，另外成區 */
@@ -1581,8 +1772,9 @@ function equipCell(slot, item) {
 function equipGrid(bySlot, used) {
   const box = el('div', 'eqgrid');
 
+  /* 上半四列：角色圖左邊兩欄（1、2）、右邊兩欄（6、7） */
   EQUIP_GRID.forEach((row, r) => {
-    const cols = [1, 2, 4, 5];
+    const cols = [1, 2, 6, 7];
     row.forEach((slot, i) => {
       if (slot) used.add(slot);
       const cell = equipCell(slot, bySlot[slot]);
@@ -1592,11 +1784,11 @@ function equipGrid(bySlot, used) {
     });
   });
 
-  /* 中央角色圖，橫跨前六列 */
+  /* 中央角色圖：三欄寬、四列高的大方塊，跟遊戲一樣 */
   const basic = d('basic') || {};
   const mid = el('div', 'eqpreview');
-  mid.style.gridColumn = 3;
-  mid.style.gridRow = '1 / span 6';
+  mid.style.gridColumn = '3 / span 3';
+  mid.style.gridRow = '1 / span ' + EQUIP_GRID.length;
   if (basic.character_image) {
     const img = document.createElement('img');
     img.src = basic.character_image;
@@ -1608,82 +1800,35 @@ function equipGrid(bySlot, used) {
   }
   box.appendChild(mid);
 
-  /* 套上跟能力值同一組的視窗外框。標題用遊戲那顆視窗的英文字樣 ——
-     遊戲本身就是這樣：視窗名 EQUIPMENT INVENTORY 是英文，裡面的內容是
-     中文。上面已經有「裝備欄」分頁了，這裡再放一次中文只是重複，
-     用英文字樣才讀得出是視窗外框而不是另一個標題。 */
-  const panel = el('div', 'gpanel gpanel-eq');
-  panel.appendChild(el('div', 'gpanel-head', 'EQUIPMENT'));
-  const body = el('div', 'gpanel-body');
-  body.appendChild(box);
-  panel.appendChild(body);
-  return panel;
+  /* 下半的通欄格子放在另一個容器。同一個格線的話手機版沒辦法各自處理 ——
+     上半要把角色圖那三欄收成 0（圖藏起來、左右四格才夠大按），可是下半
+     正好要用到那三欄，收成 0 會把三格壓扁。分開之後上半照舊 2+2，
+     下半自己換行。桌機上兩個都是七欄、間距相同，看起來仍是一整片。 */
+  const wide = el('div', 'eqgrid eqgrid-wide');
+  EQUIP_ROWS_WIDE.forEach((row) => row.forEach((slot) => {
+    if (slot) used.add(slot);
+    // 空字串要照樣放一格佔位，不然後面的欄位會整排往前擠
+    wide.appendChild(equipCell(slot, bySlot[slot]));
+  }));
+
+  const out = frag();
+  out.appendChild(box);
+  if (wide.children.length) out.appendChild(wide);
+  return out;
 }
 
-function renderEquip() {
-  const f = frag();
-  addErrors(f, ['equip']);
-  const equip = d('equip');
-  if (!equip || !Array.isArray(equip.item_equipment)) {
-    if (!DATA.equip || DATA.equip.ok) f.appendChild(el('div', 'empty', '沒有裝備資料'));
-    return f;
-  }
-
-  /* 目前穿戴之外，API 另外回傳三組預設，實測三組內容都不一樣 */
-  const presetArrays = [1, 2, 3].map((i) => {
-    const arr = equip['item_equipment_preset_' + i];
-    return (Array.isArray(arr) && arr.length) ? arr : null;
-  });
-  // 圖騰、拼圖、寶石不隨分頁換裝，補回各預設組，否則切過去會整批不見
-  const fixed = presetFixedItems(equip.item_equipment, presetArrays.filter(Boolean));
-
-  const defs = [{ label: '目前穿戴', build: () => equipContent(equip.item_equipment) }];
-  presetLabels(3, equip.preset_no).forEach((label, i) => {
-    const arr = presetArrays[i];
-    if (arr) defs.push({ label: label, build: () => equipContent(arr.concat(fixed)) });
-  });
-  f.appendChild(presetTabs(defs, 0));
-
-  /* 套裝效果是全域的，不隨分頁改變 */
-  const se = d('setEffect');
-  if (se && Array.isArray(se.set_effect) && se.set_effect.length) {
-    f.appendChild(title('套裝效果'));
-    f.appendChild(kvGrid(se.set_effect
-      .slice()
-      .sort((a, b) => n0(b.total_set_count) - n0(a.total_set_count))
-      .map((s) => [s.set_name, n0(s.total_set_count) + ' 件套'])));
-  }
-  return f;
-}
-
+/**
+ * 一組裝備的內容：格線 + 圖騰／拼圖 + 版面表沒涵蓋到的欄位。
+ *
+ * 原本這裡還有「詳細清單」檢視，把每件裝備攤成一張張卡片。拿掉了 ——
+ * 那些數值點格子就看得到，而且彈窗裡拆得比清單細（基礎／追加／卷軸／
+ * 星力四段），清單只是同一份資料的較差版本。
+ */
 function equipContent(items) {
-  const f = el('div');
+  const viewGrid = el('div', 'eqcontent');
   const bySlot = {};
   items.forEach((it) => { bySlot[it.item_equipment_slot] = it; });
 
-  /* 兩種檢視：裝備欄版面 / 詳細清單 */
-  const toggle = el('div', 'eqtoggle');
-  const btnGrid = el('button', 'tab active', '裝備欄');
-  const btnList = el('button', 'tab', '詳細清單');
-  btnGrid.type = btnList.type = 'button';
-  toggle.appendChild(btnGrid);
-  toggle.appendChild(btnList);
-  f.appendChild(toggle);
-
-  const viewGrid = el('div');
-  const viewList = el('div');
-  viewList.hidden = true;
-
-  btnGrid.addEventListener('click', () => {
-    btnGrid.classList.add('active'); btnList.classList.remove('active');
-    viewGrid.hidden = false; viewList.hidden = true;
-  });
-  btnList.addEventListener('click', () => {
-    btnList.classList.add('active'); btnGrid.classList.remove('active');
-    viewList.hidden = false; viewGrid.hidden = true;
-  });
-
-  /* --- 裝備欄版面 --- */
   const used = new Set();
   viewGrid.appendChild(equipGrid(bySlot, used));
 
@@ -1711,54 +1856,7 @@ function equipContent(items) {
   viewGrid.appendChild(el('p', 'hint',
     '點任一格看完整詳情。外框顏色代表潛能等級。共 ' + items.length + ' 件。'));
 
-  f.appendChild(viewGrid);
-  f.appendChild(viewList);
-
-  /* --- 詳細清單 --- */
-  const wrap = el('div', 'items');
-  items.forEach((it) => {
-    const total = it.item_total_option || {};
-    const stats = [
-      ['STR', total.str], ['DEX', total.dex], ['INT', total.int], ['LUK', total.luk],
-      ['攻擊力', total.attack_power], ['魔力', total.magic_power],
-      ['全屬性%', total.all_stat], ['BOSS傷%', total.boss_damage],
-      ['無視防禦%', total.ignore_monster_armor],
-    ].filter(([, v]) => v && Number(v) !== 0).map(([k, v]) => k + ' +' + v);
-
-    const lines = [];
-    if (stats.length) lines.push(stats.join('　'));
-    if (it.scroll_upgrade && Number(it.scroll_upgrade) > 0) {
-      lines.push('卷軸 ' + it.scroll_upgrade + ' 次'
-        + (it.scroll_upgradeable_count ? '（可再 ' + it.scroll_upgradeable_count + '）' : ''));
-    }
-    const sw = soulWeapon(it);
-    if (sw) lines.push('靈魂武器：' + soulWeaponBrief(sw));
-    if (it.date_expire) lines.push('到期：' + String(it.date_expire).slice(0, 10));
-
-    wrap.appendChild(itemCard({
-      part: it.item_equipment_part || it.slot_name,
-      name: it.item_name,
-      icon: it.item_icon,
-      star: it.starforce && Number(it.starforce) > 0 ? it.starforce : null,
-      lines: lines,
-      pots: [
-        {
-          label: '潛能',
-          grade: it.potential_option_grade,
-          lines: [it.potential_option_1, it.potential_option_2, it.potential_option_3],
-        },
-        {
-          label: '附加潛能',
-          grade: it.additional_potential_option_grade,
-          lines: [it.additional_potential_option_1, it.additional_potential_option_2,
-                  it.additional_potential_option_3],
-        },
-      ],
-      raw: it,
-    }));
-  });
-  viewList.appendChild(wrap);
-  return f;
+  return viewGrid;
 }
 
 /* ---------- 寵物 ---------- */

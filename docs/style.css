@@ -80,6 +80,78 @@ a { color: var(--accent); }
 ::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
 ::-webkit-scrollbar-corner { background: transparent; }
 
+/* ---------- 總覽的兩欄 ---------- */
+
+/* 屬性面板只有 640px 寬，桌機上右邊整片空著。並排之後跟遊戲裡兩個視窗
+   開在一起的感覺一樣。900px 以下疊回上下 —— 兩個面板各自都需要空間，
+   硬擠成兩欄會把裝備格子壓到按不到。 */
+.ov-cols { display: grid; gap: 16px; align-items: start; }
+.ov-col { min-width: 0; }
+
+@media (min-width: 900px) {
+  .ov-cols { grid-template-columns: minmax(0, 1.06fr) minmax(0, 1fr); }
+  /* 並排時讓兩欄自己分寬度，各自的 max-width 會擠出一塊空隙 */
+  .ov-cols .gpanel { max-width: none; }
+}
+
+/* ---------- 內在潛能：等級顏色橫條 ---------- */
+
+/* 顏色照遊戲 ABILITY 面板：傳說綠、罕見橘、稀有紫、特殊藍。
+   一律用暗字，四個底色對 #0d1017 都在 7:1 以上（紫色特意選淡一階的
+   #a78bfa，原本的 #8b5cf6 只有 4.49:1，壓在門檻上）。 */
+.abars { display: grid; gap: 6px; }
+.abar {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  color: #0d1017;
+}
+/* 等級也用文字寫出來。只靠顏色分等級的話色覺障礙的人讀不到 */
+.abar-grade {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+  opacity: .72;
+}
+.abar-text { font-size: 13.5px; font-weight: 600; min-width: 0; }
+
+.ab-legend  { background: #3fbf6a; }
+.ab-unique  { background: #e0902a; }
+.ab-rare    { background: #a78bfa; }
+.ab-special { background: #38bdf8; }
+
+/* ---------- 性向雷達圖 ---------- */
+
+.radar-wrap { max-width: 340px; }
+.radar { width: 100%; height: auto; display: block; overflow: visible; }
+.radar-grid { fill: none; stroke: var(--line); stroke-width: 1; }
+.radar-area {
+  fill: rgba(255, 154, 60, .22);
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.radar-dot { fill: var(--accent); }
+.radar-label { fill: var(--muted); font-size: 11px; }
+
+/* ---------- 身分資訊 chip ---------- */
+
+.idchips { display: flex; flex-wrap: wrap; gap: 8px; }
+.idchip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 6px 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  min-width: 0;
+}
+.idchip-k { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.idchip-v { font-size: 13.5px; font-weight: 600; word-break: break-all; }
+
 /* ---------- 圖示 ---------- */
 
 /* 尺寸跟著字級走（em），所以同一顆圖示放進大按鈕或小提示都自己對齊。
@@ -1008,7 +1080,10 @@ td.rank-name { font-weight: 600; }
   background: var(--bg-soft);
   border-bottom: 1px solid var(--line);
 }
+/* min-width: 0 不能省。grid 子項預設是 min-width: auto，裡面的預設組列
+   （flex）會撐到 max-content 不肯縮 —— 手機上量到 561px 溢出畫面。 */
 .gpanel-body { padding: 12px; display: grid; gap: 12px; }
+.gpanel-body > * { min-width: 0; }
 
 /* 戰鬥力：遊戲裡是獨立一條橫帶，不跟其他數值混在一起 */
 .gstat-power {
@@ -1240,17 +1315,10 @@ td.rank-name { font-weight: 600; }
 
 /* ---------- 裝備欄版面 ---------- */
 
-.eqtoggle {
-  display: flex;
-  gap: 6px;
-  border-bottom: 1px solid var(--line);
-  margin-bottom: 16px;
-}
-
 /* 裝備格線外面那層視窗框。格線本身已經有底色與圓角，套進 .gpanel 之後
    會變成雙層框，所以在這裡把內層的框拆掉，只留格子本身。 */
 .gpanel-eq { max-width: 584px; }
-.gpanel-eq .gpanel-body { padding: 10px; }
+.gpanel-eq .gpanel-body { padding: 10px; display: grid; gap: 6px; }
 .gpanel-eq .eqgrid {
   background: none;
   border: 0;
@@ -1261,9 +1329,9 @@ td.rank-name { font-weight: 600; }
 
 .eqgrid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 6px;
-  max-width: 560px;
+  max-width: 620px;
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -1304,15 +1372,20 @@ td.rank-name { font-weight: 600; }
   word-break: break-all;
 }
 
+/* 星力疊在圖示左上角，跟遊戲一樣。原本是佔滿整條底邊，等於每一格都要
+   多留一行高度給它，圖示只好縮小。改成角落徽章之後同樣的格子裝得下更大
+   的圖。 */
 .eq-star {
   position: absolute;
-  left: 0; right: 0; bottom: 0;
-  background: rgba(6, 8, 13, .8);
+  top: 2px; left: 2px;
+  padding: 0 4px;
+  border-radius: 6px;
+  background: rgba(6, 8, 13, .82);
   color: var(--accent);
   font-size: 9.5px;
   font-weight: 700;
   text-align: center;
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
 /* 外框顏色 = 潛能等級 */
@@ -1330,7 +1403,14 @@ td.rank-name { font-weight: 600; }
   font-size: 30px;
   overflow: hidden;
 }
-.eqpreview img { max-width: 100%; max-height: 100%; image-rendering: pixelated; }
+/* 官方給的角色圖只有一百多 px，放進三欄寬的框裡會變成中間一個小點。
+   撐滿整框並保持比例；pixelated 讓放大後維持點陣風格而不是糊掉。 */
+.eqpreview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
 
 .eqrow {
   display: grid;
@@ -2196,11 +2276,17 @@ pre.raw {
      另外，裝備視窗中央那欄是角色圖、橫跨六列 —— 手機上會變成一塊
      330px 的空白，而同一張圖在上方角色卡已經有了。把第三欄收成 0
      讓四欄裝備格變大（更好按），格子位置仍照遊戲內排列。 */
+  /* 上半：角色圖那三欄收成 0，左右四格才夠大按 */
   .eqgrid {
     padding: 8px;
     gap: 4px;
-    grid-template-columns: 1fr 1fr 0 1fr 1fr;
+    grid-template-columns: 1fr 1fr 0 0 0 1fr 1fr;
   }
+  /* 下半是通欄的，收成 0 會把格子壓扁，讓它自己換行。
+     佔位用的空格在桌機上是為了把頭尾兩格頂到正確的欄，手機重排之後
+     沒有意義，收掉才不會留一排洞。 */
+  .eqgrid-wide { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .eqgrid-wide .eqcell.blank { display: none; }
   .eqpreview { display: none; }
   .eqrow { grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); }
 
@@ -2280,4 +2366,9 @@ pre.raw {
   .hero-name { font-size: 21px; }
   .explist { min-width: 100%; }
   .explist-row { grid-template-columns: 52px 1fr auto; font-size: 12.5px; padding: 5px 10px; }
+}
+
+/* 潛能與性向那一列左右等寬 —— 上面那列是屬性配裝備，屬性欄需要多一點 */
+@media (min-width: 900px) {
+  .ov-cols-even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

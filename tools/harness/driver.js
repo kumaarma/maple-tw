@@ -811,46 +811,39 @@
     await lookup();
     head();
 
+    /* 裝備併進總覽了，沒有獨立的「裝備」分頁。總覽是預設開著的第一頁，
+       但這裡仍明確點一次，免得之後預設分頁換了就靜靜量到空的。 */
     var tab = $$('.tab').filter(function (t) {
-      return t.textContent.trim() === '裝備';
+      return t.textContent.trim() === '總覽';
     })[0];
-    if (!tab) { log.push('*** 找不到裝備分頁 ***'); return; }
+    if (!tab) { log.push('*** 找不到總覽分頁 ***'); return; }
     tab.click();
     await sleep(800);
 
     log.push('');
 
-    /* ---- 詳細清單的摘要行 ---- */
-    var list = $$('.panel.active .eqtoggle .tab').filter(function (b) {
-      return b.textContent.trim() === '詳細清單';
-    })[0];
-    if (list) { list.click(); await sleep(500); }
-
-    var lines = $$('.panel.active .item-line, .panel.active .item-body div')
-      .map(function (n) { return n.textContent; })
-      .filter(function (t) { return t.indexOf('靈魂武器') === 0; });
-    log.push('詳細清單裡的靈魂武器摘要行：' + lines.length + ' 條');
-    lines.slice(0, 3).forEach(function (t) { log.push('  ' + t.trim()); });
-
-    if (!lines.length) {
-      log.push('  無法判定（這份測試資料沒有靈魂武器，'
-        + '要驗的話補 soul_weapon_* 欄位進 fixtures）');
-      log.push('');
-      log.push.apply(log, window.__scan('[靈魂武器]'));
-      return;
-    }
-
-    /* ---- 點開武器看詳情彈窗 ---- */
-    if (list) {
-      var grid = $$('.panel.active .eqtoggle .tab').filter(function (b) {
-        return b.textContent.trim() === '裝備欄';
-      })[0];
-      if (grid) { grid.click(); await sleep(400); }
-    }
+    /* 原本這裡先驗「詳細清單」裡的靈魂武器摘要行。那個檢視已經拿掉了
+       —— 同一份資料在詳情彈窗裡拆得更細，清單只是較差的版本。所以
+       改成直接驗彈窗，那本來就是比較強的那一項。 */
 
     var cells = $$('.panel.active .eqcell').filter(function (c) {
       return c.querySelector('img');
     });
+
+    /* 先驗一般裝備的詳情彈窗。點格子看數值是這一頁的主要功能，之前卻只有
+       靈魂武器那一塊被測到 —— 彈窗整個不開也照樣過關。 */
+    if (cells.length) {
+      cells[0].click();
+      await sleep(300);
+      check('點裝備會開詳情彈窗', $('#itemModal').hidden ? '不開' : '開了', '開了');
+      check('彈窗有數值拆解', $('#itemTip .tip-stats') ? '有' : '無', '有');
+      var tip = $('#itemTip');
+      check('數值有分基礎／追加／卷軸／星力',
+        tip && /基礎/.test(tip.textContent) && /星力/.test(tip.textContent) ? '有' : '無', '有');
+      $('#itemModal').hidden = true;
+      await sleep(150);
+    }
+
     var opened = false;
     for (var i = 0; i < cells.length && !opened; i++) {
       cells[i].click();
