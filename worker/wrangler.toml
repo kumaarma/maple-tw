@@ -9,4 +9,6 @@ ALLOWED_ORIGINS = "https://kumaarma.github.io"
 
 # 機密用指令設定，不要寫在這個檔案裡（這個檔會進 git）：
 #   wrangler secret put NEXON_KEY
-#   wrangler secret put BETA_TOKEN
+#
+# BETA_TOKEN 已經不用了。之前設過的話可以清掉：
+#   wrangler secret delete BETA_TOKEN

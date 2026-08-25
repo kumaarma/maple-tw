@@ -4,13 +4,19 @@
  * 為什麼需要它：GitHub Pages 只能放靜態檔，金鑰若放前端等於公開。
  * 這支 Worker 把金鑰留在伺服器端，前端只跟它說話。
  *
- * 封測期間有兩道關卡（金鑰是共用的，URL 外流就等於開放代理）：
- *   1. 來源白名單 ALLOWED_ORIGINS
- *   2. 封測碼 BETA_TOKEN（前端以 x-beta-token 標頭帶上）
+ * 目前只有一道關卡：來源白名單 ALLOWED_ORIGINS。
+ *
+ * 要知道它擋不住什麼：Origin 是瀏覽器自己加的標頭，curl 之類的客戶端想填
+ * 什麼就填什麼。所以這道關卡只防得住「別的網站用瀏覽器來借用」，防不住
+ * 直接對著這個網址打的腳本 —— 這支 Worker 的網址寫在公開的前端 JS 裡，
+ * 等於任何人都能拿去消耗 NEXON 的每日配額。
+ *
+ * 原本還有第二道（封測碼 BETA_TOKEN，前端以 x-beta-token 標頭帶上），
+ * 已經拿掉。要重新上鎖的話，除了把那段加回來，也可以考慮 Cloudflare 的
+ * Rate Limiting 或 WAF —— 那些擋得住非瀏覽器的請求。
  *
  * 環境變數（wrangler secret put）：
  *   NEXON_KEY        必填，live_ 開頭的金鑰
- *   BETA_TOKEN       必填，發給測試者的通行碼
  *   ALLOWED_ORIGINS  必填，逗號分隔，例如 https://你的帳號.github.io
  */
 
@@ -45,7 +51,7 @@ function originAllowed(origin, env) {
 function corsHeaders(origin) {
   return {
     'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Headers': 'x-beta-token,content-type',
+    'Access-Control-Allow-Headers': 'content-type',
     'Access-Control-Allow-Methods': 'GET,OPTIONS',
     'Access-Control-Max-Age': '86400',
     'Vary': 'Origin',
@@ -86,13 +92,6 @@ export default {
         { error: { name: 'ORIGIN_DENIED', message: '此來源未被允許' } }, 403, origin);
     }
 
-    /* --- 關卡 2：封測碼 --- */
-    const wantToken = clean(env.BETA_TOKEN);
-    if (!wantToken || clean(request.headers.get('x-beta-token')) !== wantToken) {
-      return jsonResponse(
-        { error: { name: 'BETA_DENIED', message: '封測碼不正確' } }, 401, origin);
-    }
-
     if (!url.pathname.startsWith('/api/')) {
       return jsonResponse({ error: { name: 'NOT_FOUND', message: '無此路徑' } },
         404, origin);
@@ -105,7 +104,7 @@ export default {
       return jsonResponse({
         has_key: !!clean(env.NEXON_KEY),
         key_hint: clean(env.NEXON_KEY).slice(0, 6) + '…',
-        key_tier: '封測（Worker 代理）',
+        key_tier: 'Worker 代理',
         source: 'Cloudflare Worker',
         quota_used: 0,
         quota_budget: 0,

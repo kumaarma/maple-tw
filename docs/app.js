@@ -141,7 +141,7 @@ function setWelcome(show) {
  * 兩種執行模式：
  *   本機  —— 由 server.py 代理，路徑就是 /api/…，金鑰存在 apikey.txt
  *   線上  —— 靜態站（GitHub Pages）+ Cloudflare Worker 代理，
- *            金鑰留在 Worker，前端只帶封測碼
+ *            金鑰留在 Worker，前端不帶任何憑證
  * ================================================================== */
 
 /* Cloudflare Worker 代理。金鑰存在它的 secret 裡，前端拿不到也不需要。 */
@@ -151,55 +151,11 @@ const LOCAL_HOSTS = ['127.0.0.1', 'localhost', ''];
 const HOSTED = LOCAL_HOSTS.indexOf(location.hostname) === -1;
 const API_BASE = HOSTED ? (WORKER_URL + '/api/') : '/api/';
 
-const BETA_KEY = 'tms.betaToken';
-
-function betaToken() {
-  try {
-    return localStorage.getItem(BETA_KEY) || '';
-  } catch (e) {
-    return '';
-  }
-}
-
-function setBetaToken(v) {
-  try {
-    localStorage.setItem(BETA_KEY, v);
-  } catch (e) { /* 隱私模式就算了 */ }
-}
-
-/**
- * 封測碼要放進 HTTP 標頭。中文與 emoji 會讓 fetch 直接拋 TypeError
- * （無法轉成 ByteString），錯誤訊息又難懂，所以先擋下並說清楚。
- *
- * 這裡刻意比規範更嚴：標頭值其實接受整個 Latin-1（連 é ü 都過得了），
- * 但 wrangler 存的是 UTF-8、瀏覽器送的是 Latin-1 單位元組，兩邊編碼對不上，
- * 結果會是「設了一個看似有效卻永遠驗不過的碼」。限制成 ASCII 可以避免這種悶虧。
- *
- * 回傳錯誤說明，沒問題則回傳空字串。
- */
-function betaTokenProblem(v) {
-  if (!v) return '請輸入封測碼。';
-  if (/[\r\n]/.test(v)) return '封測碼不能包含換行。';
-  // eslint-disable-next-line no-control-regex
-  if (/[^\x20-\x7E\t]/.test(v)) {
-    return '封測碼只能使用半形英數字與符號 —— 它要放進 HTTP 標頭，'
-         + '中文、emoji 等非 ASCII 字元無法傳送。';
-  }
-  return '';
-}
-
-/** 統一出口：線上模式會補上封測碼標頭 */
+/* 封測碼拿掉了。線上模式現在只靠 Worker 的來源白名單，前端不帶任何憑證。
+   舊版存在瀏覽器裡的 tms.betaToken 沒有清除程序 —— 它不再被讀取，
+   留著也沒有作用。 */
 function apiFetch(path, init) {
-  const opts = init || {};
-  if (HOSTED) {
-    // 舊版存下的封測碼可能含非 ASCII，帶進標頭會讓 fetch 拋錯，
-    // 那樣連錯誤訊息都顯示不出來。有問題就送空字串，讓 Worker 回 401。
-    const t = betaToken();
-    opts.headers = Object.assign({}, opts.headers, {
-      'x-beta-token': betaTokenProblem(t) ? '' : t,
-    });
-  }
-  return fetch(API_BASE + path, opts);
+  return fetch(API_BASE + path, init || {});
 }
 
 async function rawCall(path, params) {
@@ -258,12 +214,12 @@ function refreshQuota() {
       const s = await (await apiFetch('status')).json();
       const box = $('#quota');
 
-      // 金鑰／封測碼有沒有過關 —— 這個提示兩種模式都要留
+      // 伺服器端到底有沒有金鑰 —— 這個提示兩種模式都要留
       $('#keyBtn').classList.toggle('no-key', !s.has_key);
 
       /* 配額只對「跑本機代理的人」有意義：他自己在燒自己的每日額度。
-         線上封測版的金鑰在 Worker 端，前端問到的一律是 0 / 0，
-         顯示出來只會讓測試者以為壞掉，所以整顆徽章不出現。 */
+         線上版的金鑰在 Worker 端，前端問到的一律是 0 / 0，顯示出來只會
+         讓人以為壞掉，所以整顆徽章不出現。 */
       if (HOSTED) { box.hidden = true; return; }
 
       box.hidden = false;
@@ -5263,13 +5219,13 @@ async function refreshKeyState() {
       /* 線上模式：不報配額（一律 0 / 0），也不報金鑰前綴 ——
          測試者不需要知道伺服器端金鑰長什麼樣子。 */
       box.textContent = HOSTED
-        ? '封測碼有效，可以開始查詢。'
+        ? '金鑰在伺服器端，可以直接查詢。'
         : '目前金鑰：' + s.key_hint + '（' + s.key_tier
           + '，來源 ' + s.source + '）　今日已用 '
           + s.quota_used + ' / ' + s.quota_budget;
     } else {
       box.className = 'key-state bad';
-      box.textContent = HOSTED ? '尚未輸入封測碼，查詢會失敗。'
+      box.textContent = HOSTED ? '伺服器端沒有設定金鑰，查詢會失敗。'
                                : '尚未設定金鑰，查詢會失敗。';
     }
     return s.has_key;
@@ -5305,30 +5261,6 @@ function wireKeyModal() {
     if (!key) return;
     const box0 = $('#keyState');
 
-    /* 線上模式輸入的是封測碼，不是 API 金鑰 —— 金鑰在 Worker 端，
-       前端拿不到也不該拿到。存本機後直接驗一次。 */
-    if (HOSTED) {
-      const bad = betaTokenProblem(key);
-      if (bad) {
-        box0.className = 'key-state bad';
-        box0.textContent = bad;
-        return;
-      }
-      setBetaToken(key);
-      $('#keyInput').value = '';
-      const ok = await refreshKeyState();
-      if (ok) {
-        box0.className = 'key-state ok';
-        box0.textContent = '封測碼已儲存。';
-        refreshQuota();
-        setTimeout(close, 900);
-      } else {
-        box0.className = 'key-state bad';
-        box0.textContent = '封測碼不正確，或這個網域未被允許。';
-      }
-      return;
-    }
-
     const res = await apiFetch('key', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -5363,28 +5295,12 @@ function wireKeyModal() {
   $('#dateInput').max = y;
   $('#dateInput').title = '選擇歷史快照日期，最新可填 ' + y;
 
-  /* 線上模式輸入的是封測碼，不是 API 金鑰 —— 介面文案要跟著換，
-     否則會誤導測試者去貼自己的 NEXON 金鑰。 */
+  /* 線上模式沒有東西要使用者設定 —— 金鑰在 Worker 端，封測碼也拿掉了。
+     整顆金鑰鈕藏起來，留著只會讓人以為自己該貼點什麼進去。 */
   if (HOSTED) {
     const btn = $('#keyBtn');
-    if (btn) {
-      btn.textContent = '';
-      btn.appendChild(iconText('ticket', '封測碼'));
-      btn.title = '輸入封測通行碼';
-    }
-    const h2 = document.querySelector('#keyModal h2');
-    if (h2) h2.textContent = '封測通行碼';
-    const note = document.querySelector('#keyModal .modal-note');
-    if (note) {
-      note.textContent = 'API 金鑰保存在伺服器端，你不需要（也拿不到）它。'
-        + '請輸入管理者發給你的封測碼，只會存在這台裝置的瀏覽器裡。'
-        + '封測碼限半形英數字與符號（不支援中文與 emoji）。';
-    }
-    const inp = $('#keyInput');
-    if (inp) inp.placeholder = '輸入封測碼（半形英數字）';
-    const cc = $('#cacheClear');
-    if (cc) cc.hidden = true;
-    // 先藏起來，別等 status 回來才閃一下
+    if (btn) btn.hidden = true;
+    // 配額問到的一律是 0 / 0，先藏起來，別等 status 回來才閃一下
     const q = $('#quota');
     if (q) q.hidden = true;
   }
@@ -5421,13 +5337,18 @@ function wireKeyModal() {
     const s = $('#status');
     s.className = 'status info';
     s.innerHTML = '';
-    s.appendChild(iconText('warn', HOSTED
-      ? '尚未輸入封測碼，無法查詢角色 — '
-      : '尚未設定 API 金鑰，無法查詢角色 — '));
-    const a = el('a', null, '點此設定');
-    a.href = '#';
-    a.addEventListener('click', (ev) => { ev.preventDefault(); openModal(); });
-    s.appendChild(a);
+    if (HOSTED) {
+      /* 線上模式金鑰在 Worker 端，使用者這邊無從設定 ——
+         給「點此設定」只會開出一個他填不了東西的視窗。 */
+      s.appendChild(iconText('warn',
+        '伺服器端沒有設定 API 金鑰，暫時無法查詢。'));
+    } else {
+      s.appendChild(iconText('warn', '尚未設定 API 金鑰，無法查詢角色 — '));
+      const a = el('a', null, '點此設定');
+      a.href = '#';
+      a.addEventListener('click', (ev) => { ev.preventDefault(); openModal(); });
+      s.appendChild(a);
+    }
     setWelcome(true);
   } else {
     setWelcome(true);
