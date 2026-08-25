@@ -1630,7 +1630,10 @@ pre.raw {
 
 .hcard {
   flex: 0 0 auto;
-  width: 280px;
+  /* 寬螢幕吃 280px；窄到一張卡就佔滿的時候改用百分比，右邊一定露出下一張
+     的邊 —— 那個「露一角」就是唯一的橫捲提示。實測 320px 時固定 280px 剛好
+     填滿容器，看起來像只有一張卡，右邊還有 14 張完全看不出來。 */
+  width: min(280px, 86%);
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas:
