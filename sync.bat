@@ -3,15 +3,26 @@ chcp 65001 >nul
 cd /d "%~dp0"
 setlocal
 
-rem === 兩台電腦之間同步 ===
-rem 順序：先 commit 這邊的改動 -> 拉下另一台的改動 -> 推上去
+rem === Sync this repo between two machines ===
+rem Order: commit local changes -> rebase origin/<branch> -> push
 rem
-rem 用法：
-rem   sync.bat                 commit 訊息自動用時間戳
-rem   sync.bat 修好經驗圖表    commit 訊息用這句話（訊息裡不要放引號）
+rem Usage:
+rem   sync.bat              commit message = timestamp
+rem   sync.bat some words    commit message = those words (no quotes inside)
 rem
-rem .gitignore 已經擋掉 apikey.txt / cache.json / quota.json，
-rem 這個 script 用 git add -A，一樣不會把它們推上去。
+rem apikey.txt / cache.json / quota.json are listed in .gitignore, so the
+rem "git add -A" below will not pick them up.
+rem
+rem These comments are ASCII on purpose -- do not translate them back.
+rem Under "chcp 65001" cmd.exe miscomputes the byte offset it uses to
+rem resume reading this file across multibyte text, so it restarts parsing
+rem in the middle of a later line and tries to run the tail of a comment
+rem as a command. It printed "'commit' is not recognized" from the line
+rem above, the resume point moved between runs, and one run turned the
+rem "->" in a comment into a redirect and left a stray file named after
+rem the words next to it -- which "git add -A" would then have committed.
+rem The Chinese in the echo lines below is safe: it sits inside a command
+rem that cmd has already finished parsing.
 
 set "MSG=%*"
 
