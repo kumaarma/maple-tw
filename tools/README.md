@@ -11,7 +11,8 @@
 
 - Python 3（只用標準函式庫）
 - Chrome（Windows 的預設安裝路徑會自動找到，或用 `--chrome` 指定）
-- `cache.json` —— 先用 `server.py` 查過角色，快取才會有資料
+- `cache.json` —— 先用 `server.py` 查過角色，快取才會有資料。
+  沒有金鑰的機器改用 `make_fake_fixtures.py`，`exp` 與 `tabs` 兩個模式跑得動
 
 ## 用法
 
@@ -21,6 +22,9 @@ python tools/make_fixtures.py
 
 #    快取沒涵蓋的端點（萌獸、聯盟冠軍）要補抓的話，會消耗 2 次 API 配額
 python tools/make_fixtures.py --fetch-missing
+
+#    手邊沒有金鑰時的替代：編一份最小假資料（會覆蓋 fixtures.js）
+python tools/make_fake_fixtures.py
 
 # 2. 掃版面
 python tools/rwd_scan.py                    # 角色查詢全部分頁，375/360/320
@@ -94,6 +98,13 @@ localStorage、逐格比對的三個顯示開關關掉後元素是不是真的�
 沒動的一天。驗逐日清單列數、長條數、升級標記數、x 軸標籤、表格列數，以及表格
 與圖表是不是同一組日期。
 
+還會比對**四處顯示的成長數字是不是同一個量**：逐日清單、圖表 y 軸刻度、最佳日
+柱標、tooltip 與表格。這一頁真正壞過的就是這裡 —— 四處各自格式化，早期清單標
+`%`、圖表那兩處連單位都沒印、tooltip 與表格標「級」，清單就疊在圖表上面，看到的
+是「+3.20%」正下方擺著「0.0320」。四處都印得出數字、單獨看全都正常，所以只能
+對照著測：全部要以 `%` 結尾，清單與表格要是同一組字串，tooltip（得送
+`mouseenter` 才出現）要對得上表格最舊那一列。
+
 ## 三個踩過的坑
 
 **Chrome 的 `--window-size` 不是版面寬度。** 它指定的是外框，實際 CSS 寬度
@@ -120,11 +131,13 @@ localStorage、逐格比對的三個顯示開關關掉後元素是不是真的�
 
 | 檔案 | 作用 |
 |---|---|
-| `make_fixtures.py` | `cache.json` → `fixtures.js` |
+| `make_fixtures.py` | `cache.json` → `fixtures.js`（真資料） |
+| `make_fake_fixtures.py` | 編一份最小 `fixtures.js`，沒有金鑰也能跑 `exp`／`tabs` |
 | `rwd_scan.py` | 產生測試頁、跑 Chrome、輸出報告 |
 | `harness/runner.html` | 用 iframe 鎖死版面寬度，輪詢取結果 |
 | `harness/mock.js` | 把 `fetch` 換成讀 fixtures |
 | `harness/scan.js` | 溢出與破洞的偵測邏輯 |
 | `harness/driver.js` | 點分頁、切配對模式、開詳情彈窗、收集結果 |
 
-`fixtures.js` 含角色資料，從 `cache.json` 產生，已列入 `.gitignore`。
+`fixtures.js` 含角色資料，從 `cache.json` 產生，已列入 `.gitignore` ——
+`make_fake_fixtures.py` 產生的那一份同樣不提交（同一個路徑）。
