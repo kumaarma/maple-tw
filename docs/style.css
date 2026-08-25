@@ -12,6 +12,11 @@
   --warn: #ffc857;
   --bad: #ff6b6b;
   --radius: 12px;
+
+  /* 捲軸拇指。3.16:1 對 --bg，過非文字元件的 3:1 門檻 —— 捲軸是控制項，
+     太淡就變成看得到卻找不到的東西。hover 沿用 --muted。 */
+  --scroll-thumb: #5a6579;
+  --scroll-thumb-hover: var(--muted);
 }
 
 * { box-sizing: border-box; }
@@ -43,6 +48,37 @@ body {
 }
 
 a { color: var(--accent); }
+
+/* ---------- 捲軸 ---------- */
+
+/* 自捲容器吃的是作業系統的預設捲軸 —— Windows 上是一條淺灰粗桿，兩端
+   還各有一顆箭頭鈕，壓在暗色底上像貼了張白紙。整站統一改細、改暗，
+   箭頭鈕拿掉。
+
+   兩套機制不能同時下。只要設了標準的 scrollbar-width／scrollbar-color，
+   Chrome 就整個忽略 ::-webkit-scrollbar 偽元素改走原生捲軸 —— 實測箭頭鈕
+   還在、顏色也不是指定的那個。所以用 @supports 把標準屬性隔離給沒有
+   ::-webkit-scrollbar 的瀏覽器（Firefox），Chrome／Safari 走偽元素那套。 */
+@supports not selector(::-webkit-scrollbar) {
+  * { scrollbar-width: thin; }
+  :root { scrollbar-color: var(--scroll-thumb) transparent; }
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border-radius: 99px;
+  /* 透明外框把拇指縮成 4px 細條，但命中範圍仍是完整的 10px —— 
+     直接把軌道做細的話滑鼠很難抓得到。 */
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); background-clip: padding-box; }
+/* 兩端的箭頭鈕。這東西最醜，而且現在沒人用它捲。
+   display:none 有些版本不吃，尺寸歸零比較保險，兩個都下。 */
+::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+::-webkit-scrollbar-corner { background: transparent; }
 
 /* ---------- 圖示 ---------- */
 
