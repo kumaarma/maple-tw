@@ -3344,10 +3344,12 @@ const HEXA_MATRIX = [
     slots: [[295, 535], [435, 535], [150, 300], [295, 300], [222, 420], [365, 420]] },
   { type: '精通核心', label: [838, 205],
     slots: [[905, 300], [700, 420], [838, 420], [630, 535]] },
-  { type: '強化核心', label: [222, 1160],
-    slots: [[435, 820], [222, 945], [362, 945], [150, 1065]] },
-  { type: '共用核心', label: [838, 1160],
-    slots: [[630, 820], [700, 945], [840, 945], [910, 1065]] },
+  /* 下面兩叢集比遊戲往上收 115 —— 遊戲那個位置是為了讓出中央的「VI」，
+     這裡不畫 VI，照原座標會在中間留一大塊空白。 */
+  { type: '強化核心', label: [222, 1045],
+    slots: [[435, 705], [222, 830], [362, 830], [150, 950]] },
+  { type: '共用核心', label: [838, 1045],
+    slots: [[630, 705], [700, 830], [840, 830], [910, 950]] },
 ];
 const HEXA_CENTER = [530, 690];
 
@@ -3377,33 +3379,15 @@ function hexaMatrix(cores, icons) {
   });
 
   const svg = mk('svg', {
-    viewBox: '60 130 1000 1090',
+    viewBox: '55 225 920 800',
     class: 'hexmx',
     role: 'img',
     'aria-label': 'HEXA 矩陣，' + (cores || []).length + ' 顆核心',
   });
 
-  /* 中央的 VI */
-  svg.appendChild(mk('path', {
-    d: hexPath(HEXA_CENTER[0], HEXA_CENTER[1], 62), class: 'hexmx-core',
-  }));
-  const vi = mk('text', {
-    x: HEXA_CENTER[0], y: HEXA_CENTER[1] + 16,
-    'text-anchor': 'middle', class: 'hexmx-vi',
-  });
-  vi.textContent = 'VI';
-  svg.appendChild(vi);
-
   let left = 0;
   HEXA_MATRIX.forEach((cluster, ci) => {
     const list = (byType[cluster.type] || []).slice();
-
-    /* 叢集到中心的連線 —— 遊戲裡有，能看出哪幾格是一組 */
-    cluster.slots.forEach(([x, y]) => {
-      svg.appendChild(mk('line', {
-        x1: HEXA_CENTER[0], y1: HEXA_CENTER[1], x2: x, y2: y, class: 'hexmx-link',
-      }));
-    });
 
     cluster.slots.forEach(([x, y]) => {
       const core = list.shift() || null;
@@ -3414,26 +3398,20 @@ function hexaMatrix(cores, icons) {
       }));
 
       if (core) {
-        const icon = hexaCoreIcon(core, icons);
-        if (icon) {
-          const im = mk('image', {
-            href: icon, x: x - 34, y: y - 30, width: 68, height: 68,
-            preserveAspectRatio: 'xMidYMid meet',
-          });
-          g.appendChild(im);
-        }
-        /* 等級徽章壓在上緣，跟遊戲一樣 */
+        /* 只放等級。技能圖示在這個尺寸下糊成一團，是雜訊不是資訊 ——
+           想知道是哪顆核心，滑鼠停著看 <title>，或看下面的卡片列表。 */
         g.appendChild(mk('rect', {
-          x: x - 24, y: y - 62, width: 48, height: 26, rx: 6, class: 'hexmx-lvbg',
+          x: x - 30, y: y + 2, width: 60, height: 30, rx: 8, class: 'hexmx-lvbg',
         }));
         const lv = mk('text', {
-          x: x, y: y - 43, 'text-anchor': 'middle', class: 'hexmx-lv',
+          x: x, y: y + 24, 'text-anchor': 'middle', class: 'hexmx-lv',
         });
         lv.textContent = lvNum(core.hexa_core_level);
         g.appendChild(lv);
 
         const t = mk('title');
-        t.textContent = core.hexa_core_name + '（Lv.' + lvNum(core.hexa_core_level) + '）';
+        t.textContent = cluster.type + '｜' + core.hexa_core_name
+          + '（Lv.' + lvNum(core.hexa_core_level) + '）';
         g.appendChild(t);
       } else {
         left++;
@@ -3452,13 +3430,6 @@ function hexaMatrix(cores, icons) {
       svg.appendChild(g);
     });
 
-    /* 叢集類型標籤。遊戲沒有，但這裡分不出顏色代表什麼，標了才讀得懂 */
-    const lb = mk('text', {
-      x: cluster.label[0], y: cluster.label[1],
-      'text-anchor': 'middle', class: 'hexmx-cluster',
-    });
-    lb.textContent = cluster.type + '（' + (byType[cluster.type] || []).length + '）';
-    svg.appendChild(lb);
   });
 
   const wrap = el('div', 'hexmx-wrap');
@@ -3490,8 +3461,8 @@ function renderHexa() {
   }
 
   if (cores && cores.length) {
-    f.appendChild(title('HEXA 矩陣'));
-    f.appendChild(gamePanel('HEXA 矩陣', hexaMatrix(cores, icons)));
+    f.appendChild(title('HEXA 技能'));
+    f.appendChild(gamePanel('HEXA 技能', hexaMatrix(cores, icons)));
 
     /* 依核心類型分組 */
     const groups = {};

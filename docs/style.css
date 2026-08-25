@@ -101,36 +101,25 @@ a { color: var(--accent); }
 .hexmx-wrap { max-width: 620px; }
 .hexmx { width: 100%; height: auto; display: block; }
 
-/* 中央的 VI */
-.hexmx-core { fill: rgba(255, 154, 60, .10); stroke: var(--accent-dim); stroke-width: 3; }
-.hexmx-vi {
-  fill: var(--accent);
-  font-size: 46px;
-  font-weight: 700;
-  letter-spacing: 2px;
-}
+/* 四種核心各一個色相，實心填滿不描邊 —— 這一張圖只有兩種資訊：
+   顏色（哪一類）與數字（幾級），所以形狀本身要夠實，不要再加線條。 */
+.hexmx-hex { stroke: none; }
+.hexmx-hex.t0 { fill: #6b52c9; }   /* 技能 紫 */
+.hexmx-hex.t1 { fill: #b0537f; }   /* 精通 洋紅 */
+.hexmx-hex.t2 { fill: #3a7ca5; }   /* 強化 藍 */
+.hexmx-hex.t3 { fill: #6b7280; }   /* 共用 銀 */
 
-/* 叢集到中心的連線，退在背景 */
-.hexmx-link { stroke: var(--line); stroke-width: 2; }
+/* 沒開的格子用同色系的暗版，看得出是同一叢集但還沒開 */
+.hexmx-slot.locked .hexmx-hex.t0 { fill: #35304f; }
+.hexmx-slot.locked .hexmx-hex.t1 { fill: #4a3040; }
+.hexmx-slot.locked .hexmx-hex.t2 { fill: #2b4152; }
+.hexmx-slot.locked .hexmx-hex.t3 { fill: #3a3f4b; }
+.hexmx-lock { fill: none; stroke: rgba(255, 255, 255, .38); stroke-width: 4; }
+.hexmx-lockarc { fill: none; stroke: rgba(255, 255, 255, .38); stroke-width: 4; }
 
-/* 四種核心各一個色相。四個都是在暗底上的填色塊，不是文字，
-   所以看的是能不能彼此分辨，而不是 4.5:1。 */
-.hexmx-hex { stroke-width: 3; }
-.hexmx-hex.t0 { fill: rgba(139, 92, 246, .22); stroke: #8b5cf6; }   /* 技能 紫 */
-.hexmx-hex.t1 { fill: rgba(224, 76, 122, .22); stroke: #e04c7a; }   /* 精通 洋紅 */
-.hexmx-hex.t2 { fill: rgba(56, 189, 248, .22); stroke: #38bdf8; }   /* 強化 藍 */
-.hexmx-hex.t3 { fill: rgba(148, 163, 184, .20); stroke: #94a3b8; }  /* 共用 銀 */
-
-/* 沒開的格子整個壓暗，才看得出跟已開的差別 */
-.hexmx-slot.locked .hexmx-hex { fill: rgba(255, 255, 255, .03); stroke: var(--line); }
-.hexmx-lock { fill: none; stroke: var(--muted); stroke-width: 3; }
-.hexmx-lockarc { fill: none; stroke: var(--muted); stroke-width: 3; }
-
-/* 等級徽章壓在六邊形上緣 */
-.hexmx-lvbg { fill: rgba(6, 8, 13, .82); stroke: var(--line); stroke-width: 1.5; }
-.hexmx-lv { fill: var(--text); font-size: 17px; font-weight: 700; }
-
-.hexmx-cluster { fill: var(--muted); font-size: 26px; }
+/* 等級徽章放在格子中間偏下，壓在實心底色上 */
+.hexmx-lvbg { fill: rgba(10, 8, 14, .62); }
+.hexmx-lv { fill: #eef1f7; font-size: 22px; font-weight: 700; }
 
 /* 滑鼠移上去給一點回饋 —— 每一格都有 <title>，停著就看得到核心名稱 */
 .hexmx-slot { cursor: help; }
