@@ -712,6 +712,186 @@ function renderHero(name) {
   return hero;
 }
 
+/* ================================================================== *
+ * 遊戲版面的能力值面板
+ * ================================================================== */
+
+/**
+ * 億／萬 的中文數字寫法，跟遊戲面板一致：20億 9568萬 437。
+ *
+ * 只有大數字才拆。遊戲裡 HP 是「71,599」不是「7萬1599」，所以門檻設在
+ * 一億 —— 戰鬥力與屬性攻擊力會拆，其餘維持千分位。
+ */
+function fmtWan(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n) || Math.abs(n) < 1e8) return num(v);
+  const neg = n < 0;
+  let x = Math.abs(Math.trunc(n));
+  const yi = Math.floor(x / 1e8); x -= yi * 1e8;
+  const wan = Math.floor(x / 1e4); x -= wan * 1e4;
+  const out = [];
+  if (yi) out.push(yi.toLocaleString('zh-TW') + '億');
+  if (wan) out.push(wan + '萬');
+  if (x) out.push(String(x));
+  return (neg ? '-' : '') + out.join(' ');
+}
+
+/* 要補上百分號的欄位。API 只給數字，遊戲面板上這些是百分比 —— 對照
+   遊戲畫面逐格確認過，沒有靠猜的。 */
+const STAT_PCT = {
+  '傷害': 1, 'BOSS怪物傷害': 1, '一般怪物傷害': 1, '最終傷害': 1,
+  '無視防禦率': 1, '爆擊機率': 1, '爆擊傷害': 1, 'Buff持續時間': 1,
+  '未套用冷卻時間': 1, '無視屬性耐性': 1, '狀態異常追加傷害': 1,
+  '召喚獸持續時間增加': 1, '楓幣獲得量': 1, '道具掉落率': 1,
+  '獲得額外經驗值': 1, '狀態異常耐性': 0, '攻擊速度': 0,
+};
+
+/* 遊戲「屬性」面板的兩欄配對與順序。左右各一格，順序照遊戲畫面。
+   null 代表那一格要特別組（屬性攻擊力是 最低~最高、冷卻時間減少是 秒/%）。 */
+const GAME_STAT_PAIRS = [
+  ['@eleAtk',        '傷害'],
+  ['最終傷害',       'BOSS怪物傷害'],
+  ['無視防禦率',     '一般怪物傷害'],
+  ['攻擊力',         '爆擊機率'],
+  ['魔法攻擊力',     '爆擊傷害'],
+  ['@cooldown',      'Buff持續時間'],
+  ['未套用冷卻時間', '無視屬性耐性'],
+  ['狀態異常追加傷害', '召喚獸持續時間增加'],
+  ['楓幣獲得量',     '星力'],
+  ['道具掉落率',     '神秘力量'],
+  ['獲得額外經驗值', '真實之力'],
+];
+
+/* 基礎六格，遊戲面板上排在戰鬥力底下 */
+const GAME_STAT_BASE = [['HP', 'MP'], ['STR', 'DEX'], ['INT', 'LUK']];
+
+/** 這些已經在面板上出現過，不要再進「其他」區塊重複一次 */
+function gameStatUsed() {
+  const used = { '戰鬥力': 1, '最低屬性攻擊力': 1, '最高屬性攻擊力': 1,
+                 '冷卻時間減少(秒)': 1, '冷卻時間減少(％)': 1 };
+  GAME_STAT_BASE.forEach((row) => row.forEach((k) => { used[k] = 1; }));
+  GAME_STAT_PAIRS.forEach((row) => row.forEach((k) => {
+    if (k && k.charAt(0) !== '@') used[k] = 1;
+  }));
+  return used;
+}
+
+/** 一格的顯示值。@ 開頭是要合併多個 API 欄位的特例 */
+function gameStatValue(get, key) {
+  if (key === '@eleAtk') {
+    const lo = get('最低屬性攻擊力'), hi = get('最高屬性攻擊力');
+    if (lo === null && hi === null) return null;
+    if (lo === null || hi === null || String(lo) === String(hi)) {
+      return fmtWan(hi === null ? lo : hi);
+    }
+    /* 遊戲只顯示一個數字，API 給的是區間。併成「A ~ B」會撐成兩行把格子
+       擠歪，所以主值取最高、最低降成副標 —— 兩個數字都留著，不挑一個
+       當唯一真相。 */
+    return { main: fmtWan(hi), sub: '最低 ' + fmtWan(lo) };
+  }
+  if (key === '@cooldown') {
+    const s = get('冷卻時間減少(秒)'), p = get('冷卻時間減少(％)');
+    if (s === null && p === null) return null;
+    return (s === null ? '—' : s + '秒') + ' / ' + (p === null ? '—' : p + '%');
+  }
+  const v = get(key);
+  if (v === null) return null;
+  return num(v) + (STAT_PCT[key] ? '%' : '');
+}
+
+const GAME_STAT_LABEL = {
+  '@eleAtk': '屬性攻擊力', '@cooldown': '冷卻時間減少',
+  '未套用冷卻時間': '無視冷卻時間', 'BOSS怪物傷害': 'Boss怪物傷害',
+  '無視屬性耐性': '無視屬性抗性', '召喚獸持續時間增加': '增加召喚獸持續時間',
+  '獲得額外經驗值': '額外獲得經驗值', '真實之力': '真實力量',
+};
+
+/**
+ * 照遊戲「屬性」視窗的排法畫能力值。
+ *
+ * 原本是照 API 回傳順序鋪成一排卡片 —— 資料沒錯，但玩家記得的是遊戲裡
+ * 那個排列（戰鬥力一條帶、六個基礎值、然後兩欄成對的清單），照 API 順序
+ * 找一格要掃過整片。
+ *
+ * API 沒有的東西不假裝有：遊戲那些 ▲ 是「被加成過」的標記，API 只給最終
+ * 值、不說哪些被加成，所以不畫。+／- 與「套用」是遊戲內的操作鈕，唯讀的
+ * 查詢站放了也沒有意義。
+ */
+/**
+ * 畫一組左右成對的格子。
+ *
+ * 少了一邊不能直接跳過 —— 兩欄格線會把後面的每一格往前擠一位，整個面板
+ * 的配對就全錯了（實測某筆資料沒有 MP，結果變成 HP｜STR、DEX｜INT）。
+ * 只要有一邊拿得到值就兩邊都畫，缺的那邊補「—」；兩邊都沒有才整列不畫。
+ */
+function addStatPair(box, pair, valueOf, labelOf) {
+  const vals = pair.map(valueOf);
+  if (vals.every((v) => v === null)) return;
+  pair.forEach((k, i) => {
+    const v = vals[i];
+    const cell = el('div', 'gstat-cell');
+    cell.appendChild(el('span', 'gstat-k', labelOf(k)));
+    if (v && typeof v === 'object') {
+      const box2 = el('span', 'gstat-vbox');
+      box2.appendChild(el('span', 'gstat-v', v.main));
+      box2.appendChild(el('span', 'gstat-sub', v.sub));
+      cell.appendChild(box2);
+    } else {
+      cell.appendChild(el('span', 'gstat-v' + (v === null ? ' gstat-none' : ''),
+        v === null ? '—' : v));
+    }
+    box.appendChild(cell);
+  });
+}
+
+function statGamePanel(stat) {
+  const map = {};
+  stat.final_stat.forEach((s) => { map[s.stat_name] = s.stat_value; });
+  const get = (k) => (map[k] === undefined || map[k] === null || map[k] === '' ? null : map[k]);
+
+  const panel = el('div', 'gpanel');
+  panel.appendChild(el('div', 'gpanel-head', '屬性'));
+  const body = el('div', 'gpanel-body');
+
+  /* ---- 戰鬥力：獨立一條帶 ---- */
+  const power = get('戰鬥力');
+  if (power !== null) {
+    const band = el('div', 'gstat-power');
+    band.appendChild(el('span', 'gstat-power-k', '戰鬥力'));
+    band.appendChild(el('span', 'gstat-power-v', fmtWan(power)));
+    body.appendChild(band);
+  }
+
+  /* ---- 基礎六格 ---- */
+  const base = el('div', 'gstat-rows gstat-base');
+  GAME_STAT_BASE.forEach((pair) => addStatPair(base, pair,
+    (k) => (get(k) === null ? null : num(get(k))), (k) => k));
+  if (base.children.length) body.appendChild(base);
+
+  /* ---- 兩欄成對的清單 ---- */
+  const rows = el('div', 'gstat-rows');
+  GAME_STAT_PAIRS.forEach((pair) => addStatPair(rows, pair,
+    (k) => gameStatValue(get, k), (k) => GAME_STAT_LABEL[k] || k));
+  if (rows.children.length) body.appendChild(rows);
+
+  panel.appendChild(body);
+
+  /* ---- 遊戲面板沒有、但 API 有的欄位 ---- */
+  const used = gameStatUsed();
+  const rest = stat.final_stat.filter((s) => !used[s.stat_name]);
+  const extra = rest.length ? el('details', 'gpanel-extra') : null;
+  if (extra) {
+    extra.appendChild(el('summary', null, '其他欄位（' + rest.length + '）'));
+    extra.appendChild(kvGrid(rest.map((s) =>
+      [s.stat_name, num(s.stat_value) + (STAT_PCT[s.stat_name] ? '%' : '')])));
+  }
+
+  const wrap = frag();
+  wrap.appendChild(panel);
+  if (extra) wrap.appendChild(extra);
+  return wrap;
+}
+
 function kvGrid(pairs) {
   const grid = el('div', 'grid');
   pairs.forEach(([k, v]) => {
@@ -962,7 +1142,7 @@ function renderOverview() {
 
   if (stat && Array.isArray(stat.final_stat)) {
     f.appendChild(title('綜合能力值'));
-    f.appendChild(kvGrid(stat.final_stat.map((s) => [s.stat_name, num(s.stat_value)])));
+    f.appendChild(statGamePanel(stat));
     if (stat.remain_ap !== undefined) {
       f.appendChild(el('p', 'hint', '剩餘 AP：' + num(stat.remain_ap)));
     }
@@ -1428,7 +1608,16 @@ function equipGrid(bySlot, used) {
   }
   box.appendChild(mid);
 
-  return box;
+  /* 套上跟能力值同一組的視窗外框。標題用遊戲那顆視窗的英文字樣 ——
+     遊戲本身就是這樣：視窗名 EQUIPMENT INVENTORY 是英文，裡面的內容是
+     中文。上面已經有「裝備欄」分頁了，這裡再放一次中文只是重複，
+     用英文字樣才讀得出是視窗外框而不是另一個標題。 */
+  const panel = el('div', 'gpanel gpanel-eq');
+  panel.appendChild(el('div', 'gpanel-head', 'EQUIPMENT'));
+  const body = el('div', 'gpanel-body');
+  body.appendChild(box);
+  panel.appendChild(body);
+  return panel;
 }
 
 function renderEquip() {

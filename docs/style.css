@@ -987,6 +987,97 @@ td.rank-name { font-weight: 600; }
 .kv .k { font-size: 12px; color: var(--muted); }
 .kv .v { font-size: 16px; font-weight: 600; margin-top: 2px; word-break: break-all; }
 
+/* ---------- 遊戲版面的面板 ---------- */
+
+/* 仿遊戲視窗的外框與標題列，但用站上的色票 —— 遊戲那組藍灰視窗圖是
+   NEXON 的美術資源，抽圖檔放上公開網站等於散布他人著作。這裡整個用
+   CSS 重畫，只借版面不借素材。 */
+.gpanel {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  overflow: hidden;
+  max-width: 640px;
+}
+.gpanel-head {
+  padding: 8px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  color: var(--muted);
+  background: var(--bg-soft);
+  border-bottom: 1px solid var(--line);
+}
+.gpanel-body { padding: 12px; display: grid; gap: 12px; }
+
+/* 戰鬥力：遊戲裡是獨立一條橫帶，不跟其他數值混在一起 */
+.gstat-power {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--card-hi);
+  border: 1px solid var(--accent-dim);
+  border-radius: 10px;
+}
+.gstat-power-k { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.gstat-power-v {
+  font-size: 21px;
+  font-weight: 700;
+  color: var(--accent);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 兩欄成對，跟遊戲面板一樣。左標籤右數值 */
+.gstat-rows {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.gstat-cell {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 11px;
+  background: var(--card);
+  min-width: 0;
+}
+.gstat-k { font-size: 12px; color: var(--muted); min-width: 0; }
+.gstat-v {
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  word-break: break-all;
+}
+/* 基礎六格的數字大一點，遊戲裡它們也比下面那串顯眼 */
+.gstat-base .gstat-v { font-size: 15px; }
+
+/* 主值加副標（屬性攻擊力的最低值） */
+.gstat-vbox { display: flex; flex-direction: column; align-items: flex-end; min-width: 0; }
+.gstat-sub { font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* 資料裡沒有這一格。留著位置是為了不讓兩欄配對整個位移 */
+.gstat-none { color: var(--muted); font-weight: 400; }
+
+.gpanel-extra { margin-top: 12px; }
+.gpanel-extra > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+
+@media (max-width: 430px) {
+  /* 「狀態異常追加傷害」加上數字，兩欄在窄螢幕會擠到換行變成鋸齒。
+     標籤與數值改成上下排，欄數維持兩欄 —— 版面還是遊戲那個形狀。 */
+  .gstat-cell { flex-direction: column; align-items: stretch; gap: 1px; }
+  .gstat-v { text-align: left; }
+  .gstat-vbox { align-items: flex-start; }
+  .gstat-power-v { font-size: 18px; }
+}
+
 /* ---------- 裝備 ---------- */
 
 .items {
@@ -1154,6 +1245,18 @@ td.rank-name { font-weight: 600; }
   gap: 6px;
   border-bottom: 1px solid var(--line);
   margin-bottom: 16px;
+}
+
+/* 裝備格線外面那層視窗框。格線本身已經有底色與圓角，套進 .gpanel 之後
+   會變成雙層框，所以在這裡把內層的框拆掉，只留格子本身。 */
+.gpanel-eq { max-width: 584px; }
+.gpanel-eq .gpanel-body { padding: 10px; }
+.gpanel-eq .eqgrid {
+  background: none;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  max-width: none;
 }
 
 .eqgrid {
