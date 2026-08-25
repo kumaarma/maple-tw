@@ -427,7 +427,7 @@ const TABS = [
   /* 裝備併進總覽了，不再另立分頁 —— 預設組切換就在 EQUIPMENT 面板裡。
      代價是 setEffect 也變成一定會抓（套裝效果跟著搬過來）。 */
   ['總覽',     ['basic', 'stat', 'popularity', 'ability', 'hyperStat', 'propensity', 'dojang',
-               'equip', 'setEffect'], renderOverview],
+               'equip', 'setEffect', 'android'], renderOverview],
   ['造型',     ['beauty', 'android', 'cash'],                   renderCosmetic],
   ['寵物',     ['pet'],                                         renderPets],
   ['萌獸',     ['familiar'],                                    renderFamiliar],
@@ -1012,6 +1012,37 @@ function idChips(pairs) {
  * 預設組原本在「裝備」分頁自己一列，跟能力值分開兩個地方看。併進同一個
  * 視窗之後就跟遊戲一樣了 —— 遊戲的 EQUIPMENT 視窗底部就是 PRESETS 1 2 3。
  */
+/**
+ * 把「現在穿的機器人」補進目前穿戴。
+ *
+ * NEXON 把機器人放在 character/android-equipment，不塞進 item_equipment ——
+ * 所以「目前穿戴」的機器人那格會空著，但預設組裡有（預設組是整份快照）。
+ * 遊戲裡沒有這種區分，它永遠顯示現在穿的、包含機器人，所以這格空著算漏。
+ *
+ * 只在 item_equipment 沒有機器人時才補，免得跟預設組的資料打架。
+ */
+function withAndroid(items) {
+  const list = items || [];
+  if (list.some((it) => it.item_equipment_slot === '機器人')) return list;
+
+  const a = d('android');
+  if (!a || !a.android_name) return list;
+
+  /* 湊成一件裝備的形狀。機器人沒有星力、卷軸與潛能 —— 這些欄位要整個
+     不給，不能給 '0'：詳情彈窗是用 !== undefined 判斷要不要印那一行的，
+     給 0 會多出一句沒意義的「卷軸強化 0 次」。 */
+  return list.concat([{
+    item_equipment_slot: '機器人',
+    item_equipment_part: '機器人',
+    item_name: a.android_name,
+    item_icon: a.android_icon,
+    item_description: a.android_description,
+    item_total_option: {},
+    item_base_option: {},
+    _fromAndroid: true,
+  }]);
+}
+
 function overviewEquip() {
   const equip = d('equip');
   if (!equip || !Array.isArray(equip.item_equipment) || !equip.item_equipment.length) {
@@ -1026,7 +1057,10 @@ function overviewEquip() {
   // 圖騰、拼圖、寶石不隨分頁換裝，補回各預設組，否則切過去會整批不見
   const fixed = presetFixedItems(equip.item_equipment, presetArrays.filter(Boolean));
 
-  const defs = [{ label: '目前穿戴', build: () => equipContent(equip.item_equipment) }];
+  const defs = [{
+    label: '目前穿戴',
+    build: () => equipContent(withAndroid(equip.item_equipment)),
+  }];
   presetLabels(3, equip.preset_no).forEach((label, i) => {
     const arr = presetArrays[i];
     if (arr) defs.push({ label: label, build: () => equipContent(arr.concat(fixed)) });

@@ -830,6 +830,18 @@
       return c.querySelector('img');
     });
 
+    /* 機器人那一格。NEXON 把它放在 character/android-equipment，不塞進
+       item_equipment —— 所以「目前穿戴」要另外補進來。補漏了的話那格只是
+       安靜地變空，畫面照樣好好的，沒有任何檢查會失敗。 */
+    var android = $$('.panel.active .eqcell').filter(function (c) {
+      return (c.title || '').indexOf('機器人') === 0;
+    })[0];
+    check('目前穿戴有機器人那一格', android ? '有' : '無', '有');
+    if (android) {
+      check('機器人格有圖示', android.querySelector('img') ? '有' : '無', '有');
+      log.push('  ' + android.title);
+    }
+
     /* 先驗一般裝備的詳情彈窗。點格子看數值是這一頁的主要功能，之前卻只有
        靈魂武器那一塊被測到 —— 彈窗整個不開也照樣過關。 */
     if (cells.length) {
