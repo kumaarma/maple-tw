@@ -117,9 +117,25 @@ a { color: var(--accent); }
 .hexmx-lock { fill: none; stroke: rgba(255, 255, 255, .38); stroke-width: 4; }
 .hexmx-lockarc { fill: none; stroke: rgba(255, 255, 255, .38); stroke-width: 4; }
 
-/* 等級徽章放在格子中間偏下，壓在實心底色上 */
-.hexmx-lvbg { fill: rgba(10, 8, 14, .62); }
-.hexmx-lv { fill: #eef1f7; font-size: 22px; font-weight: 700; }
+/* 圖示的暗底方框。六邊形是實心飽和色，彩色圖示直接壓上去會糊在一起 */
+.hexmx-plate { fill: rgba(8, 10, 16, .78); }
+
+/* 等級徽章壓在六邊形上緣 */
+.hexmx-lvbg { fill: rgba(8, 10, 16, .88); }
+.hexmx-lv { fill: #eef1f7; font-size: 21px; font-weight: 700; }
+
+/* 可點的格子。SVG 沒有 button 語意，鍵盤焦點要自己畫出來 */
+.hexmx-slot.clickable { cursor: pointer; }
+.hexmx-slot.clickable:focus { outline: none; }
+.hexmx-slot.clickable:focus-visible .hexmx-hex {
+  stroke: var(--accent);
+  stroke-width: 5;
+}
+
+/* 彈窗裡的核心資訊 */
+.hexa-tiptags { justify-content: center; margin-bottom: 10px; }
+.tip-line { font-size: 13px; text-align: center; margin: 6px 0; }
+.tip-sub { font-size: 12px; color: var(--muted); margin: 12px 0 6px; }
 
 /* 滑鼠移上去給一點回饋 —— 每一格都有 <title>，停著就看得到核心名稱 */
 .hexmx-slot { cursor: help; }

@@ -3363,6 +3363,56 @@ function hexPath(cx, cy, s) {
   return 'M' + pts.join('L') + 'Z';
 }
 
+/**
+ * 六邊形點下去的詳情。沿用裝備那個彈窗容器，不另外做一個。
+ *
+ * 矩陣上只看得到顏色與等級，這裡補的是「這格到底是什麼」——
+ * 核心名稱、類型、等級，以及它強化了哪些技能。
+ */
+function showHexaTip(core, type, icons) {
+  const tip = $('#itemTip');
+  tip.innerHTML = '';
+
+  tip.appendChild(el('div', 'tip-name', txt(core.hexa_core_name)));
+
+  // 沿用裝備彈窗既有的 .tip-tags .tag，不另外開一組樣式
+  const tags = el('div', 'tip-tags hexa-tiptags');
+  tags.appendChild(el('span', 'tag', type));
+  tags.appendChild(el('span', 'tag', 'Lv.' + lvNum(core.hexa_core_level)
+    + ' / ' + HEXA_CORE_MAX));
+  tip.appendChild(tags);
+
+  /* 還差多少材料。跟六轉進度那一段同一份費用表，不會各算各的 */
+  const need = hexaRemain(type, core.hexa_core_level, core.hexa_core_name);
+  if (need && (need.erda || need.frag)) {
+    tip.appendChild(el('div', 'tip-line',
+      '升到滿級還要　靈魂艾爾達 ' + num(need.erda) + '　碎片 ' + num(need.frag)));
+  } else if (need) {
+    tip.appendChild(el('div', 'tip-line', '已滿級'));
+  }
+
+  const linked = hexaLinkedNames(core);
+  if (linked.length) {
+    tip.appendChild(el('div', 'tip-sub', '強化的技能（' + linked.length + '）'));
+    const row = el('div', 'hexa-linked');
+    linked.forEach((n) => {
+      const chip = el('span', 'hexa-skill');
+      chip.appendChild(iconImg(icons[n], 22));
+      chip.appendChild(el('span', null, n));
+      row.appendChild(chip);
+    });
+    tip.appendChild(row);
+  }
+
+  const close = el('button', 'ghost tip-close', '關閉');
+  close.type = 'button';
+  close.addEventListener('click', () => { $('#itemModal').hidden = true; });
+  tip.appendChild(close);
+
+  $('#itemModal').hidden = false;
+  tip.scrollTop = 0;
+}
+
 function hexaMatrix(cores, icons) {
   const NS = 'http://www.w3.org/2000/svg';
   // attrs 要有預設值 —— <title> 是不帶屬性的，Object.keys(undefined) 會炸
@@ -3398,13 +3448,25 @@ function hexaMatrix(cores, icons) {
       }));
 
       if (core) {
-        /* 只放等級。技能圖示在這個尺寸下糊成一團，是雜訊不是資訊 ——
-           想知道是哪顆核心，滑鼠停著看 <title>，或看下面的卡片列表。 */
+        /* 圖示墊一塊暗底再放上去。六邊形是實心飽和色，彩色圖示直接壓上去
+           會糊在一起 —— 遊戲裡每個圖示也都有自己的暗色方框。 */
         g.appendChild(mk('rect', {
-          x: x - 30, y: y + 2, width: 60, height: 30, rx: 8, class: 'hexmx-lvbg',
+          x: x - 37, y: y - 41, width: 74, height: 74, rx: 10, class: 'hexmx-plate',
+        }));
+        const icon = hexaCoreIcon(core, icons);
+        if (icon) {
+          g.appendChild(mk('image', {
+            href: icon, x: x - 33, y: y - 37, width: 66, height: 66,
+            preserveAspectRatio: 'xMidYMid meet',
+          }));
+        }
+
+        /* 等級徽章壓在上緣，跟遊戲一樣 */
+        g.appendChild(mk('rect', {
+          x: x - 27, y: y - 62, width: 54, height: 28, rx: 8, class: 'hexmx-lvbg',
         }));
         const lv = mk('text', {
-          x: x, y: y + 24, 'text-anchor': 'middle', class: 'hexmx-lv',
+          x: x, y: y - 42, 'text-anchor': 'middle', class: 'hexmx-lv',
         });
         lv.textContent = lvNum(core.hexa_core_level);
         g.appendChild(lv);
@@ -3413,6 +3475,19 @@ function hexaMatrix(cores, icons) {
         t.textContent = cluster.type + '｜' + core.hexa_core_name
           + '（Lv.' + lvNum(core.hexa_core_level) + '）';
         g.appendChild(t);
+
+        /* 整格可點，開詳情彈窗。SVG 元素沒有 button 語意，所以自己補上
+           role／tabindex 與 Enter／空白鍵 —— 只綁 click 的話用鍵盤打不開。 */
+        g.setAttribute('role', 'button');
+        g.setAttribute('tabindex', '0');
+        g.setAttribute('aria-label',
+          cluster.type + '　' + core.hexa_core_name + '　Lv.' + lvNum(core.hexa_core_level));
+        g.classList.add('clickable');
+        const open = () => showHexaTip(core, cluster.type, icons);
+        g.addEventListener('click', open);
+        g.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
+        });
       } else {
         left++;
         /* 上鎖：畫一個簡單的掛鎖 */

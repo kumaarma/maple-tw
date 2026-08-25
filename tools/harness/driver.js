@@ -328,6 +328,16 @@
       + (String(got) === String(want) ? '  OK' : '  *** 應為 ' + want + ' ***'));
   }
 
+  /* 矩陣一共 18 格。填滿幾格＝這個模式改寫出來的核心數，所以從 HEXA_PLAN
+     推，不要寫死 —— 寫死的話改 HEXA_PLAN 就會忘記同步這裡。
+     （HEXA_PLAN 少放一個共用核心，所以是 11 不是 12。） */
+  var HEXA_MX = {
+    slots: 18,
+    get filled() {
+      return HEXA_PLAN.reduce(function (n, p) { return n + p[1].length; }, 0);
+    },
+  };
+
   async function runHexa() {
     var cores = rewriteHexa();
     if (!cores) { log.push('*** fixtures 沒有 character/hexamatrix ***'); return; }
@@ -475,6 +485,29 @@
     });
     check('有寬度的進度條', fills.filter(function (w) { return w > 0; }).length,
       fills.length);
+
+    /* ---- 六邊形矩陣 ---- */
+    log.push('');
+    var hexes = $$('.panel.active .hexmx-hex');
+    check('矩陣格數（含未開放）', hexes.length, HEXA_MX.slots);
+    check('有圖示的格子', $$('.panel.active .hexmx-slot image').length, HEXA_MX.filled);
+    check('上鎖的格子', $$('.panel.active .hexmx-slot.locked').length,
+      HEXA_MX.slots - HEXA_MX.filled);
+
+    /* 可點的只有填滿的那些 —— 鎖住的格子沒東西可看，點了只會開出空彈窗 */
+    var clickable = $$('.panel.active .hexmx-slot.clickable');
+    check('可點的格子＝有核心的格子', clickable.length, HEXA_MX.filled);
+    if (clickable.length) {
+      clickable[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await sleep(400);
+      check('點六邊形會開詳情', $('#itemModal').hidden ? '不開' : '開了', '開了');
+      var t = $('#itemTip').textContent.replace(/s+/g, ' ').trim();
+      check('詳情有核心類型', /核心/.test(t) ? '有' : '無', '有');
+      check('詳情有強化的技能', /強化的技能/.test(t) ? '有' : '無', '有');
+      log.push('  ' + t.slice(0, 50));
+      $('#itemModal').hidden = true;
+      await sleep(150);
+    }
 
     log.push('');
     log.push.apply(log, window.__scan('[HEXA 六轉進度]'));
