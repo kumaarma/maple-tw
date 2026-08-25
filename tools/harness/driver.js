@@ -7,6 +7,7 @@
  *   #mode=fold           區塊收合與比對頁的顯示開關
  *   #mode=hexa           六轉進度：改寫核心等級後比對算出來的數字
  *   #mode=soul           靈魂武器：改版後的 soul_weapon_* 欄位有沒有顯示出來
+ *   #mode=exp            經驗追蹤：塞假的經驗歷史，比對四處顯示的成長數字
  *
  * 結果寫進 #diag，由 runner.html 輪詢取走。
  */
@@ -610,6 +611,42 @@
       log.push('  成長欄：' + gains.join('　'));
       log.push('  首列：' + Array.prototype.slice.call(trs[0].children)
         .map(function (td) { return td.textContent.trim(); }).join('　｜　'));
+
+      /* 四處講的是同一個量。這一頁真正壞過的就是這裡：清單、圖表 y 軸、
+         最佳日柱標、tooltip 與表格各自格式化，早期清單標 %、圖表那兩處
+         連單位都沒印、tooltip 與表格標「級」。清單就疊在圖表上面，看到的
+         是「+3.20%」正下方擺著「0.0320」—— 四處都印得出數字、單獨看
+         全都正常，所以只能對照著測。 */
+      var listGains = $$('.panel.active .explist-row .el-gainval').map(function (n) {
+        return n.textContent.trim().replace(/^\[|\]$/g, '');
+      });
+      /* y 軸刻度與 x 軸標籤同樣是 text.axis，靠對齊方式分：y 軸靠右 end */
+      var yaxis = svg ? Array.prototype.slice.call(svg.querySelectorAll('text.axis'))
+        .filter(function (t) { return t.getAttribute('text-anchor') === 'end'; })
+        .map(function (t) { return t.textContent.trim(); }) : [];
+      var barlab = svg ? Array.prototype.slice.call(svg.querySelectorAll('text.barlabel'))
+        .map(function (t) { return t.textContent.trim(); }) : [];
+
+      /* tooltip 是第四處，要滑過長條才出現。命中區由舊到新，points[0] 是
+         最舊那天，對應表格（新的在上）的最後一列。 */
+      var tip = '';
+      var hit = svg ? svg.querySelector('rect.hit') : null;
+      if (hit) {
+        hit.dispatchEvent(new MouseEvent('mouseenter'));
+        await sleep(150);
+        var main = $('.panel.active .charttip .tt-main');
+        tip = main ? main.textContent.trim() : '';
+      }
+
+      var all = listGains.concat(yaxis, barlab, gains, tip ? [tip] : []);
+      check('四處的成長數字都帶 %',
+        all.filter(function (s) { return /%$/.test(s); }).length, all.length);
+      check('清單與表格是同一組數字',
+        listGains.join(',') === gains.join(',') ? '是' : '否', '是');
+      check('tooltip 與表格最舊那一列相同', tip, gains[gains.length - 1]);
+      log.push('  清單：' + listGains.join('　'));
+      log.push('  y 軸：' + yaxis.join('　') + '　柱標：' + barlab.join('　')
+        + '　tooltip：' + (tip || '（沒抓到）'));
     }
     log.push('');
     log.push('  資料範圍：' + dates[0] + ' ~ ' + dates[dates.length - 1]);
