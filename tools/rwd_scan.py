@@ -15,6 +15,7 @@ fixtures。這一點很重要：先前用手寫的樣板測，結果漏掉了沒
     python tools/rwd_scan.py --mode hexa         六轉進度
     python tools/rwd_scan.py --mode soul         靈魂武器
     python tools/rwd_scan.py --mode exp          經驗追蹤
+    python tools/rwd_scan.py --mode hist         最近查詢卡片
     python tools/rwd_scan.py --widths 375        只測一個寬度
     python tools/rwd_scan.py --shot 1            截圖第 1 個分頁（裝備）
     python tools/rwd_scan.py --shot 1 --widths 1100    桌機版對照
@@ -119,11 +120,13 @@ def extract_diag(dom_bytes):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", default="tabs",
-                    choices=["tabs", "compare", "fold", "hexa", "soul", "exp"])
+                    choices=["tabs", "compare", "fold", "hexa", "soul", "exp",
+                             "hist"])
     ap.add_argument("--widths", default="375,360,320",
                     help="CSS 寬度，逗號分隔。320 是最窄的實機，360 是多數 Android")
     ap.add_argument("--shot", type=int, default=None,
-                    help="改成截圖模式，指定分頁索引（0=總覽, 1=裝備…）")
+                    help="改成截圖模式。tabs 模式下是分頁索引（0=總覽, 1=裝備…）；"
+                         "其他模式忽略這個數字，直接截該模式的結果")
     ap.add_argument("--chrome", default=None)
     args = ap.parse_args()
 
@@ -138,9 +141,16 @@ def main():
             # iframe 高度要接近視窗高度，內容才會在 iframe 內捲動；設太高
             # 就不需要捲，驅動裡的 scrollTo 等於沒作用，截到的會是最上面的
             # 角色卡而不是分頁內容。
-            target = "%s?p=%s&mode=tab&i=%d&w=%d&h=1250" % (
-                runner, url(page), args.shot, w)
-            shot = os.path.join(WORK, "shot-%d-tab%d.png" % (w, args.shot))
+            # tabs 模式下 --shot 的數字是分頁索引；其他模式沒有分頁可切，
+            # 就直接截那個模式跑完的樣子（數字忽略）。
+            if args.mode == "tabs":
+                frag = "mode=tab&i=%d" % args.shot
+                tag = "tab%d" % args.shot
+            else:
+                frag = "mode=%s" % args.mode
+                tag = args.mode
+            target = "%s?p=%s&%s&w=%d&h=1250" % (runner, url(page), frag, w)
+            shot = os.path.join(WORK, "shot-%d-%s.png" % (w, tag))
             run_chrome(chrome, target, ["--screenshot=" + shot,
                                         "--window-size=%d,1400" % (w + 145)])
             print("已截圖 %s" % shot)

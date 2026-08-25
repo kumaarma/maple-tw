@@ -8,6 +8,7 @@
  *   #mode=hexa           六轉進度：改寫核心等級後比對算出來的數字
  *   #mode=soul           靈魂武器：改版後的 soul_weapon_* 欄位有沒有顯示出來
  *   #mode=exp            經驗追蹤：塞假的經驗歷史，比對四處顯示的成長數字
+ *   #mode=hist           最近查詢卡片：欄位、億萬格式、收藏排序、分享網址
  *
  * 結果寫進 #diag，由 runner.html 輪詢取走。
  */
@@ -652,6 +653,160 @@
     log.push('  資料範圍：' + dates[0] + ' ~ ' + dates[dates.length - 1]);
   }
 
+  /**
+   * 最近查詢卡片。
+   *
+   * 這一段全靠 localStorage，不打 API 也不用查詢成功 —— 直接餵四筆紀錄給
+   * histSave() 再叫 histRender()。走 histSave 而不是直接寫 localStorage 是
+   * 刻意的：收藏優先與上限擠掉的邏輯就在那裡面，繞過去就等於沒測。
+   *
+   * 四筆故意做成不同情況：
+   *   收藏 + 歷史最高比現值高（MAX 那行要出現）
+   *   一般 + 歷史最高等於現值（MAX 那行不該出現）
+   *   一般 + 戰鬥力小於一萬（億萬格式要退回純數字）
+   *   舊版紀錄，只有 name/world/cls/level（沒有頭像、沒有數值格）
+   */
+  var HIST_SEED = [
+    { name: '甲一般', world: '極限', cls: '夜光', level: 290, guild: '公會甲',
+      img: '', rate: '12.5', cp: 1025399544, cpMax: 1025399544, fav: false,
+      at: 1756000000000 },
+    { name: '乙收藏', world: '露娜', cls: '狂狼勇士', level: 295, guild: '公會乙',
+      img: '', rate: '36.081', cp: 1025399544, cpMax: 2574729778, fav: true,
+      at: 1756000001000 },
+    { name: '丙小數', world: '愛麗西亞', cls: '主教', level: 210, guild: '',
+      img: '', rate: '0.4', cp: 9544, cpMax: 9544, fav: false,
+      at: 1756000002000 },
+    { name: '丁舊版', world: '斯卡尼亞', cls: '英雄', level: 250,
+      at: 1756000003000 },
+  ];
+
+  function cards() { return $$('#history .hcard'); }
+  function cardText(card, sel) {
+    var n = card.querySelector(sel);
+    return n ? n.textContent.trim() : '（沒有）';
+  }
+
+  async function runHist() {
+    head();
+
+    histSave(HIST_SEED.slice());
+    histRender();
+    await sleep(200);
+
+    log.push('');
+    log.push('最近查詢卡片（' + HIST_SEED.length + ' 筆假紀錄，不打 API）');
+
+    var cs = cards();
+    check('卡片數', cs.length, HIST_SEED.length);
+    if (!cs.length) { done(); return; }
+
+    /* 收藏的要排最前面。histSave 存的順序就是顯示順序，所以這裡驗的是
+       histSave 有沒有把收藏拉到前面 —— 假資料故意把收藏那筆放在第二個。 */
+    check('收藏的排在第一張', cardText(cs[0], '.hcard-name'), '乙收藏');
+
+    var byName = {};
+    cs.forEach(function (c) { byName[cardText(c, '.hcard-name')] = c; });
+
+    /* 億萬格式。這是照著要做的那張卡片來的：戰鬥力十位數，千分位讀不出
+       量級。9544 這種四位數要退回純數字，不能寫成「0萬9544」。 */
+    check('戰鬥力用億萬分段',
+      cardText(byName['乙收藏'], '.hcard-stats .hstat:last-child .hstat-v'),
+      '10億2539萬9544');
+    check('四位數不加單位',
+      cardText(byName['丙小數'], '.hcard-stats .hstat:last-child .hstat-v'),
+      '9544');
+
+    /* 歷史最高只在真的比現值高的時候印 —— 第一次查詢時兩者相等，
+       印一次一樣的數字只是雜訊。 */
+    check('MAX 那行只出現在有新高的卡片',
+      $$('#history .hstat-sub').length, 1);
+    check('MAX 的值', cardText(byName['乙收藏'], '.hstat-sub'),
+      'MAX：25億7472萬9778');
+    check('現值等於歷史最高時不印 MAX',
+      cardText(byName['甲一般'], '.hstat-sub'), '（沒有）');
+
+    check('經驗百分比取兩位',
+      cardText(byName['乙收藏'], '.hcard-stats .hstat:first-child .hstat-v'),
+      '36.08%');
+
+    /* 舊版紀錄缺欄位。整張卡片不該因此不畫 —— 名字與等級列還要在，
+       只是沒有數值格。 */
+    check('舊版紀錄仍有名字',
+      cardText(byName['丁舊版'], '.hcard-name'), '丁舊版');
+    check('舊版紀錄沒有數值格',
+      byName['丁舊版'].querySelectorAll('.hcard-stats').length, 0);
+    check('舊版紀錄的等級列用職業補上公會的位置',
+      cardText(byName['丁舊版'], '.hcard-meta'), 'Lv250 | 斯卡尼亞 | 英雄');
+
+    /* 收藏按鈕的狀態要說得出來 —— 只靠顏色的話用螢幕閱讀器的人拿不到。 */
+    var pressed = cs.filter(function (c) {
+      var b = c.querySelector('.hcard-fav');
+      return b && b.getAttribute('aria-pressed') === 'true';
+    });
+    check('aria-pressed 標出收藏', pressed.length, 1);
+
+    check('每張都有分享鈕',
+      $$('#history .hcard-share').length, HIST_SEED.length);
+    check('分享網址帶 ?name= 且編碼過',
+      charUrl('甲一般').indexOf('?name=' + encodeURIComponent('甲一般')) !== -1
+        ? '是' : '否', '是');
+
+    /* 分享出去的網址要讀得回來。中文角色名經過 encodeURIComponent 再
+       解析是最容易掉東西的一段，所以來回都驗。 */
+    var t = urlTarget('?name=' + encodeURIComponent('乙收藏') + '&date=2026-08-20');
+    check('網址讀得回角色名', t ? t.name : '（null）', '乙收藏');
+    check('網址讀得回日期', t ? t.date : '（null）', '2026-08-20');
+    check('沒有 name 就不自動查詢',
+      urlTarget('?date=2026-08-20') === null ? '是' : '否', '是');
+
+    /* 點收藏 → 進到收藏那一組，排在所有非收藏的前面。
+       驗的不是「跳到第一張」—— 組內是按最後查詢時間排的，甲一般比乙收藏
+       舊，所以它會排在乙收藏後面。要驗的是分組，不是絕對位置。 */
+    byName['甲一般'].querySelector('.hcard-fav').click();
+    await sleep(200);
+    var names = cards().map(function (c) { return cardText(c, '.hcard-name'); });
+    var isFav = cards().map(function (c) {
+      var b = c.querySelector('.hcard-fav');
+      return !!b && b.getAttribute('aria-pressed') === 'true';
+    });
+    check('收藏數變成 2', isFav.filter(Boolean).length, 2);
+    check('收藏的都排在非收藏前面',
+      isFav.lastIndexOf(true) < isFav.indexOf(false) ? '是' : '否', '是');
+    check('組內按最後查詢時間排', names.join(','), '乙收藏,甲一般,丁舊版,丙小數');
+
+    /* 移除。× 是卡片裡的按鈕，卡片本身也可點 —— 點 × 不該同時觸發查詢。 */
+    var before = $('#result').hidden;
+    cards()[0].querySelector('.hcard-x').click();
+    await sleep(200);
+    check('移除後少一張', cards().length, HIST_SEED.length - 1);
+    check('點 × 沒有順便觸發查詢', $('#result').hidden === before ? '是' : '否', '是');
+
+    /* 上限與收藏的關係：塞 20 筆、其中 2 筆收藏，總數要被壓到 15，
+       而那 2 筆收藏不能被擠掉。 */
+    var many = [];
+    for (var i = 0; i < 20; i++) {
+      many.push({ name: '路人' + i, level: 200 + i, world: '測試',
+                  fav: (i === 18 || i === 19), at: 1756000000000 + i });
+    }
+    histSave(many);
+    histRender();
+    await sleep(200);
+    check('超過上限會壓回 15 張', cards().length, 15);
+    check('收藏的沒被擠掉', cards().filter(function (c) {
+      var b = c.querySelector('.hcard-fav');
+      return b && b.getAttribute('aria-pressed') === 'true';
+    }).length, 2);
+
+    /* 卡片是橫捲的一排，掃一次版面確認沒有溢出到畫面外 */
+    log.push.apply(log, window.__scan('[最近查詢]'));
+
+    /* 上面最後一項測試把畫面塞成 15 張沒有數值的「路人」。--shot 截的是
+       跑完之後的樣子，那樣看不出卡片長什麼樣 —— 還原成四筆假紀錄再收工。 */
+    histSave(HIST_SEED.slice());
+    histRender();
+    await sleep(200);
+  }
+
   async function runSoul() {
     await lookup();
     head();
@@ -733,6 +888,7 @@
       else if (mode === 'hexa') await runHexa();
       else if (mode === 'soul') await runSoul();
       else if (mode === 'exp') await runExp();
+      else if (mode === 'hist') await runHist();
       else await runTabs();
     } catch (e) {
       log.push('ERROR ' + e.message);

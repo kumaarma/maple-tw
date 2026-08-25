@@ -53,6 +53,34 @@ function txt(v) {
 }
 
 /**
+ * 大數字改用「億／萬」分段。
+ *
+ * 戰鬥力動輒十位數，1,025,399,544 這種千分位讀不出量級 —— 要數逗號才知道
+ * 是十億還是一億。10億2539萬9544 一眼就看得出來。
+ *
+ * 中段補零到四位是刻意的：1 億又 1 點戰鬥力寫成「1億1」會被讀成 1 億 1 萬，
+ * 寫「1億0000萬0001」才不會有歧義。尾段是零就整段省略（2億5000萬）。
+ */
+function fmtBig(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return txt(v);
+  if (Math.abs(n) < 10000) return String(n);
+
+  const sign = n < 0 ? '-' : '';
+  const a = Math.abs(Math.trunc(n));
+  const yi = Math.floor(a / 1e8);
+  const wan = Math.floor((a % 1e8) / 1e4);
+  const ones = a % 1e4;
+  const pad = (x) => String(x).padStart(4, '0');
+
+  let out = '';
+  if (yi) out += yi + '億';
+  if (wan || (yi && ones)) out += (yi ? pad(wan) : String(wan)) + '萬';
+  if (ones) out += (yi || wan) ? pad(ones) : String(ones);
+  return sign + out;
+}
+
+/**
  * liberation_quest_clear 的值不是布林 —— 實測回傳字串 "2"，是階段數。
  * 官方文件查不到刻度定義，所以原值照實顯示，不自行詮釋成「已完成」。
  * 也一併容錯 true/false，以免其他角色回傳的型別不同。
@@ -333,6 +361,35 @@ async function need(keys) {
   missing.forEach((k, i) => { DATA[k] = results[i]; });
 }
 
+/**
+ * 把目前查的角色寫進網址，這樣重新整理、加書籤、直接複製網址列都還在同一個
+ * 角色上（卡片的「分享」也是複製這個形式）。用 replaceState 而不是 pushState：
+ * 查十個角色不該在瀏覽器裡堆十筆上一頁。
+ */
+function syncUrl(name, date) {
+  if (!window.history || !history.replaceState) return;
+  const qs = new URLSearchParams();
+  qs.set('name', name);
+  if (date) qs.set('date', date);
+  try {
+    history.replaceState(null, '', location.pathname + '?' + qs.toString());
+  } catch (e) { /* file:// 不給改，無所謂 */ }
+}
+
+/**
+ * 開站時的 ?name=／?date=，讓分享出去的網址直接落在那個角色上。
+ * search 參數只給測試餵值用 —— 正常呼叫不帶，就讀真的網址。
+ */
+function urlTarget(search) {
+  try {
+    const qs = new URLSearchParams(search === undefined ? location.search : search);
+    const name = (qs.get('name') || '').trim();
+    return name ? { name: name, date: (qs.get('date') || '').trim() } : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 async function lookup(name, date) {
   const box = $('#status');
   const out = $('#result');
@@ -362,7 +419,8 @@ async function lookup(name, date) {
   render(name);
   out.hidden = false;
   setWelcome(false);
-  histAdd(name, d('basic'));
+  histAdd(name, d('basic'), d('stat'));
+  syncUrl(name, date);
 }
 
 const TABS = [
@@ -4575,20 +4633,59 @@ function histLoad() {
   }
 }
 
+/**
+ * 收藏的排前面，而且不會被上限擠掉。
+ *
+ * 名額還是總共 HIST_MAX 個 —— 收藏優先分配，剩下的給最近查詢。這樣
+ * localStorage 不會無限長大，又不會出現「釘選了卻被新查詢頂掉」。
+ * 順序直接存成「收藏在前」，所以 histRender 照著存的順序畫就好。
+ *
+ * 兩組各自再按最後查詢時間排。不排的話順序等於「傳進來的陣列長什麼樣」，
+ * 那會跟著呼叫路徑跑 —— 收藏一個舊角色，它會停在原本的位置；但如果是從
+ * histAdd 進來的同一個角色就會跑到最前面。同一個動作兩種結果，看起來像
+ * 隨機。用 at 排就只有一種答案。舊版紀錄沒有 at，當成最舊。
+ */
 function histSave(list) {
+  const byTime = (a, b) => (Number(b.at) || 0) - (Number(a.at) || 0);
+  const favs = list.filter((h) => h.fav).sort(byTime).slice(0, HIST_MAX);
+  const rest = list.filter((h) => !h.fav).sort(byTime)
+    .slice(0, Math.max(0, HIST_MAX - favs.length));
   try {
-    localStorage.setItem(HIST_KEY, JSON.stringify(list.slice(0, HIST_MAX)));
+    localStorage.setItem(HIST_KEY, JSON.stringify(favs.concat(rest)));
   } catch (e) { /* 隱私模式或空間不足就算了 */ }
 }
 
-/** 查詢成功後補上角色資訊；同名的往前提，不重複 */
-function histAdd(name, basic) {
+/**
+ * 查詢成功後補上角色資訊；同名的往前提，不重複。
+ *
+ * 收藏狀態與歷史最高戰鬥力要從舊那筆搬過來 —— 它們是累積下來的，
+ * 不能被這次查詢的結果蓋掉。
+ */
+function histAdd(name, basic, stat) {
+  const prev = histLoad().filter((h) => h.name === name)[0] || {};
   const list = histLoad().filter((h) => h.name !== name);
+
+  const cpRaw = stat && Array.isArray(stat.final_stat)
+    ? (stat.final_stat.filter((r) => r.stat_name
+        && r.stat_name.indexOf('戰鬥力') !== -1)[0] || {}).stat_value
+    : null;
+  const cp = Number(cpRaw);
+  const cpOk = Number.isFinite(cp) && cp > 0;
+
   list.unshift({
     name: name,
     world: (basic && basic.world_name) || '',
     cls: (basic && basic.character_class) || '',
     level: (basic && basic.character_level) || '',
+    guild: (basic && basic.character_guild_name) || '',
+    img: (basic && basic.character_image) || '',
+    rate: (basic && basic.character_exp_rate) || '',
+    cp: cpOk ? cp : (prev.cp || null),
+    /* 歷史最高：API 沒有這個欄位，只能自己記。第一次查的時候等於現值，
+       所以卡片上那一行會先不顯示 —— 沒有比較基準時印一次一樣的數字
+       只是雜訊。 */
+    cpMax: Math.max(cpOk ? cp : 0, Number(prev.cpMax) || 0) || null,
+    fav: !!prev.fav,
     at: Date.now(),
   });
   histSave(list);
@@ -4600,6 +4697,11 @@ function histRemove(name) {
   histRender();
 }
 
+function histToggleFav(name) {
+  histSave(histLoad().map((h) => (h.name === name ? Object.assign({}, h, { fav: !h.fav }) : h)));
+  histRender();
+}
+
 function ago(ts) {
   const s = Math.floor((Date.now() - ts) / 1000);
   if (s < 60) return '剛剛';
@@ -4608,46 +4710,143 @@ function ago(ts) {
   return Math.floor(s / 86400) + ' 天前';
 }
 
+/**
+ * 分享用的網址。開站時會讀 ?name=，所以貼給別人可以直接開。
+ *
+ * 不用 location.origin + pathname 組 —— file:// 的 origin 是字串 "null"，
+ * 那樣會生出 "null/index.html?name=…"。從 href 砍掉問號與井號後面最實在。
+ */
+function charUrl(name) {
+  const base = location.href.split('#')[0].split('?')[0];
+  return base + '?name=' + encodeURIComponent(name);
+}
+
+/** 一格數值。副標（歷史最高）只在真的比現值高的時候給 */
+function histStat(label, value, sub) {
+  const box = el('div', 'hstat');
+  box.appendChild(el('div', 'hstat-k', label));
+  box.appendChild(el('div', 'hstat-v', value));
+  if (sub) box.appendChild(el('div', 'hstat-sub', sub));
+  return box;
+}
+
+/**
+ * 一張卡片。
+ *
+ * 整張可點，但可點的部分是裡面那顆 .hcard-go 按鈕（頭像＋名字＋等級列），
+ * 不是整張卡 —— 卡片裡還有收藏、分享、移除三顆按鈕，巢狀 button 是無效
+ * HTML，而且鍵盤族會多出三個沒意義的停留點。滑鼠點空白處也想查詢，所以
+ * 卡片本身另外掛一個 click，遇到 button 上的點擊就讓那顆按鈕自己處理。
+ */
+function histCard(h) {
+  const card = el('div', 'hcard' + (h.fav ? ' fav' : ''));
+
+  const go = el('button', 'hcard-go');
+  go.type = 'button';
+  go.title = h.at ? ('上次查詢：' + ago(h.at)) : '';
+
+  const img = el('span', 'hcard-img');
+  attachIcon(img, h.img, '🍁');
+  go.appendChild(img);
+
+  const idBox = el('span', 'hcard-id');
+  idBox.appendChild(el('span', 'hcard-name', h.name));
+  /* 舊版紀錄只存了世界／等級／職業，沒有公會與頭像 —— 有什麼就印什麼，
+     不要因為缺欄位就整張卡片不畫。 */
+  const meta = [h.level ? 'Lv' + h.level : '', h.world, h.guild || h.cls]
+    .filter(Boolean).join(' | ');
+  if (meta) idBox.appendChild(el('span', 'hcard-meta', meta));
+  go.appendChild(idBox);
+  card.appendChild(go);
+
+  const rate = parseFloat(h.rate);
+  const stats = el('div', 'hcard-stats');
+  if (Number.isFinite(rate)) {
+    stats.appendChild(histStat('經驗', rate.toFixed(2) + '%'));
+  }
+  if (h.cp) {
+    stats.appendChild(histStat('戰鬥力', fmtBig(h.cp),
+      (h.cpMax && h.cpMax > h.cp) ? ('MAX：' + fmtBig(h.cpMax)) : null));
+  }
+  if (stats.children.length) card.appendChild(stats);
+
+  /* ---- 三顆按鈕 ---- */
+
+  const fav = el('button', 'hcard-fav');
+  fav.type = 'button';
+  fav.title = h.fav ? '取消收藏' : '收藏（排在最前面，不會被新查詢擠掉）';
+  fav.setAttribute('aria-label', (h.fav ? '取消收藏 ' : '收藏 ') + h.name);
+  fav.setAttribute('aria-pressed', h.fav ? 'true' : 'false');
+  const heart = icon('heart');
+  if (h.fav) heart.setAttribute('class', 'ico ico-fill');
+  fav.appendChild(heart);
+  fav.addEventListener('click', () => histToggleFav(h.name));
+  card.appendChild(fav);
+
+  const share = el('button', 'hcard-share');
+  share.type = 'button';
+  share.title = '複製這個角色的網址';
+  share.appendChild(iconText('share', '分享'));
+  share.addEventListener('click', async () => {
+    const done = (msg) => {
+      share.textContent = msg;
+      setTimeout(() => {
+        share.textContent = '';
+        share.appendChild(iconText('share', '分享'));
+      }, 1600);
+    };
+    try {
+      await navigator.clipboard.writeText(charUrl(h.name));
+      done('已複製');
+    } catch (e) {
+      /* file:// 或沒授權時 clipboard 會被擋。網址還是要讓人拿得到，
+         所以退而求其次塞進輸入框旁的提示，而不是無聲失敗。 */
+      done('複製失敗');
+      showError($('#status'), '無法寫入剪貼簿，網址：' + charUrl(h.name));
+    }
+  });
+  card.appendChild(share);
+
+  const del = el('button', 'hcard-x', '×');
+  del.type = 'button';
+  del.title = '從紀錄移除';
+  del.setAttribute('aria-label', '從紀錄移除 ' + h.name);
+  del.addEventListener('click', () => histRemove(h.name));
+  card.appendChild(del);
+
+  const run = () => {
+    $('#nameInput').value = h.name;
+    lookup(h.name, $('#dateInput').value);
+  };
+  go.addEventListener('click', run);
+  card.addEventListener('click', (e) => {
+    if (e.target.closest('button')) return;   // 讓那顆按鈕自己處理
+    run();
+  });
+
+  return card;
+}
+
 function histRender() {
   const box = $('#history');
   const list = histLoad();
   box.innerHTML = '';
   if (!list.length) return;
 
-  box.appendChild(el('span', 'hist-label', '最近查詢：'));
+  const head = el('div', 'hist-head');
+  head.appendChild(el('span', 'hist-label', '最近查詢（點卡片直接查詢）'));
 
-  list.forEach((h) => {
-    const chip = el('span', 'chip');
-
-    const go = el('button', 'chip-go');
-    go.type = 'button';
-    go.appendChild(el('b', null, h.name));
-    const sub = [h.world, h.level ? 'Lv.' + h.level : '', h.cls]
-      .filter(Boolean).join(' · ');
-    if (sub) go.appendChild(el('small', null, sub));
-    go.title = sub ? (sub + '　' + ago(h.at)) : ago(h.at);
-    go.addEventListener('click', () => {
-      $('#nameInput').value = h.name;
-      lookup(h.name, $('#dateInput').value);
-    });
-    chip.appendChild(go);
-
-    const del = el('button', 'chip-x', '×');
-    del.type = 'button';
-    del.title = '從紀錄移除';
-    del.addEventListener('click', (e) => {
-      e.stopPropagation();
-      histRemove(h.name);
-    });
-    chip.appendChild(del);
-
-    box.appendChild(chip);
-  });
-
-  const clear = el('button', 'chip-clear', '清除全部');
+  const clear = el('button', 'hist-clear', '清除全部');
   clear.type = 'button';
   clear.addEventListener('click', () => { histSave([]); histRender(); });
-  box.appendChild(clear);
+  head.appendChild(clear);
+  box.appendChild(head);
+
+  /* 橫捲一排，不是往下疊 —— 15 張卡片直排在手機上會把搜尋框整個推出畫面。
+     分頁列已經是同一個做法。 */
+  const strip = el('div', 'hist-cards');
+  list.forEach((h) => strip.appendChild(histCard(h)));
+  box.appendChild(strip);
 }
 
 /* ================================================================== *
@@ -4836,5 +5035,15 @@ function wireKeyModal() {
     setWelcome(true);
   } else {
     setWelcome(true);
+  }
+
+  /* 分享出去的網址（?name=）直接落在那個角色上。放在最後、而且只在金鑰
+     可用時才跑 —— 沒有金鑰的話查詢一定失敗，那時該讓使用者看到上面那句
+     「點此設定」，不是一個查不到角色的錯誤。 */
+  const target = hasKey ? urlTarget() : null;
+  if (target) {
+    $('#nameInput').value = target.name;
+    if (target.date) $('#dateInput').value = target.date;
+    lookup(target.name, target.date);
   }
 })();

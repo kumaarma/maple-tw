@@ -32,12 +32,19 @@ python tools/rwd_scan.py --mode compare     # 裝備比對
 python tools/rwd_scan.py --mode fold        # 區塊收合與顯示開關（功能測試）
 python tools/rwd_scan.py --mode hexa        # 六轉進度（功能測試）
 python tools/rwd_scan.py --mode exp         # 經驗追蹤（功能測試）
+python tools/rwd_scan.py --mode hist        # 最近查詢卡片（功能測試）
 python tools/rwd_scan.py --widths 375       # 只測一個寬度
 
 # 3. 截圖（眼睛看還是必要的，掃描器只抓得到量得出來的東西）
 python tools/rwd_scan.py --shot 1                  # 第 1 個分頁＝裝備
 python tools/rwd_scan.py --shot 1 --widths 1100    # 桌機版對照
+python tools/rwd_scan.py --mode hist --shot 0      # 截其他模式跑完的樣子
 ```
+
+`--shot` 的數字只有 `tabs` 模式當分頁索引用；其他模式沒有分頁可切，數字會被
+忽略，截到的是那個模式跑完的畫面。所以功能模式最後值得把畫面還原成看得懂的
+狀態 —— `hist` 的最後一項測試會把畫面塞成 15 張沒有數值的「路人」，跑完會再
+還原成四筆假紀錄，不然截出來的圖看不出卡片長什麼樣。
 
 截圖與產生的測試頁放在 `tools/.work/`（已忽略）。找到問題時 `rwd_scan.py`
 的結束碼是 1。
@@ -104,6 +111,23 @@ localStorage、逐格比對的三個顯示開關關掉後元素是不是真的�
 是「+3.20%」正下方擺著「0.0320」。四處都印得出數字、單獨看全都正常，所以只能
 對照著測：全部要以 `%` 結尾，清單與表格要是同一組字串，tooltip（得送
 `mouseenter` 才出現）要對得上表格最舊那一列。
+
+`--mode hist` 測最近查詢的卡片。全靠 `localStorage`，不打 API 也不需要查詢
+成功 —— 直接餵四筆紀錄給 `histSave()` 再叫 `histRender()`。走 `histSave` 而不是
+直接寫 `localStorage` 是刻意的：收藏優先與上限擠掉的邏輯就在那裡面，繞過去
+就等於沒測。
+
+四筆假紀錄故意做成不同情況：收藏且歷史最高比現值高（`MAX` 那行要出現）、
+歷史最高等於現值（不該出現）、戰鬥力四位數（億萬格式要退回純數字）、以及
+一筆**舊版紀錄**（只有 `name`／`world`／`cls`／`level`，沒有頭像與數值）——
+欄位是後來才加的，舊的紀錄還躺在使用者的瀏覽器裡，缺欄位不能讓整張卡片
+不畫。另外驗收藏排序與分組、`aria-pressed`、億萬分段、`?name=` 的編碼與
+解析來回、點 × 不會順便觸發查詢，以及塞 20 筆時會壓回 15 張而收藏不被擠掉。
+
+開站時讀 `?name=` 自動查詢那一段**不在這個模式的範圍內** —— 測試頁是用
+hash 傳模式的，`location.search` 動不到。那條路徑另外用 Chrome 直接開
+`page.html?name=…` 驗過（帶 name 會查、空白與只有 date 不會查、日期欄會
+填上），但那是一次性的手動驗證，沒有留成自動測試。
 
 ## 三個踩過的坑
 
