@@ -201,18 +201,44 @@ API 每天只給一張快照，所以「經驗」分頁是逐日抓 `character/b
 GitHub Pages 上的版本走 `worker/worker.js` 代理，NEXON 金鑰存在 Worker 的
 secret 裡，前端拿不到。
 
-**目前只有一道關卡：來源白名單 `ALLOWED_ORIGINS`。** 要清楚它擋不住什麼 ——
-`Origin` 是瀏覽器自己加的標頭，curl 之類的客戶端想填什麼就填什麼。所以它防得住
-「別的網站用瀏覽器來借用」，防不住直接對著這個網址打的腳本。Worker 的網址寫在
-公開的前端 JS 裡，等於任何人都能拿去消耗每日配額。
+**目前只有一道關卡：來源白名單 `ALLOWED_ORIGINS`。** 部署後對 `/api/status`
+實測（這個路徑不打上游、不消耗配額）：
+
+| 請求 | 結果 |
+|---|---|
+| 帶正確 `Origin`、不帶任何憑證 | `200` |
+| 不帶 `Origin` | `403` |
+| 帶錯誤 `Origin` | `403` |
+
+**不要把上面那兩個 403 當成防護。** `Origin` 是瀏覽器自己加的標頭，任何客戶端
+想填什麼就填什麼 —— 下面這一行就能拿到資料：
+
+```bash
+curl -H "Origin: https://kumaarma.github.io" <worker 網址>/api/character/basic?ocid=...
+```
+
+所以這道關卡防得住「別的網站用瀏覽器來借用」，防不住直接對著網址打的腳本。
+而 Worker 的網址就寫在公開的前端 JS 裡（`WORKER_URL`），等於任何人都能拿去
+消耗每日配額。**現在等於沒有防護。**
 
 原本還有第二道（封測碼 `BETA_TOKEN`，前端以 `x-beta-token` 標頭帶上），已經
-拿掉。要重新上鎖的話，除了把那段加回來，也可以用 Cloudflare 的 Rate Limiting
-或 WAF —— 那些擋得住非瀏覽器的請求。
+拿掉，Worker 上那個 secret 也 `wrangler secret delete` 清掉了（現在只剩
+`NEXON_KEY`）。要重新上鎖的話：把那段加回來，或用 Cloudflare 的 Rate Limiting
+／WAF —— 後者在邊緣就擋掉，對非瀏覽器有效，而且不需要使用者輸入任何東西。
 
-改動這一塊要注意順序：**先 `wrangler deploy` 再推前端**。Worker 拿掉關卡之後
-對舊前端是相容的（多帶一個沒人看的標頭而已）；反過來先推前端的話，前端不再
-帶標頭、Worker 還在檢查，整站會 401。
+### 部署
+
+```bash
+npx wrangler deploy -c worker/wrangler.toml     # Worker
+git push                                        # 前端（GitHub Pages 自動部署）
+```
+
+**順序有講究：動到關卡時先部署 Worker 再推前端。** Worker 放寬對舊前端是相容的
+（舊前端多帶一個沒人看的標頭而已）；反過來先推前端的話，前端不再帶憑證、
+Worker 還在檢查，整站會 401 —— 拿掉封測碼那次就是這樣，前端先上去了，
+Worker 慢一步，中間有一小段時間是壞的。
+
+金鑰本身：`npx wrangler secret put NEXON_KEY -c worker/wrangler.toml`。
 
 ## 還沒做的
 
