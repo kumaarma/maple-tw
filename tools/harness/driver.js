@@ -511,8 +511,12 @@
 
   function seedExp() {
     var store = {};
+    /* 基準日要跟 app.js 的 latestDataDate() 完全一致 —— 官方資料凌晨才
+       更新，所以台灣時間 2 點前算的是「前天」而不是「昨天」。只減 1 天的話
+       在 00:00～01:59 這個窗口會跟畫面差一天，最舊那筆掉出查詢範圍，
+       七天變六天。這個 bug 寫進來之後每次都在白天跑，一直沒被抓到。 */
     var base = new Date(Date.now() + 8 * 3600 * 1000);   // UTC+8
-    base.setUTCDate(base.getUTCDate() - 1);              // latestDataDate()
+    base.setUTCDate(base.getUTCDate() - (base.getUTCHours() < 2 ? 2 : 1));
     var dates = [];
     for (var k = 0; k < EXP_PLAN.length; k++) {
       var dd = new Date(base);
@@ -834,7 +838,16 @@
     });
 
     /* 寵物面板。三隻各是一個 2×2 區塊，沒有的技能格子照樣留著 ——
-       少畫的話下排會對不齊，但畫面不會壞，看不出來。 */
+       少畫的話下排會對不齊，但畫面不會壞，看不出來。
+
+       寵物在 EQUIPMENT INVENTORY 的第二個分頁，內容是點開才建的，
+       所以要先切過去；驗完切回「裝備」，後面的機器人與彈窗檢查才有東西。 */
+    var petTab = $$('.panel.active .gtabs > .pset-bar > .pset').filter(function (b) {
+      return b.textContent.trim() === '寵物';
+    })[0];
+    check('裝備面板有「寵物」分頁', petTab ? '有' : '無', '有');
+    if (petTab) { petTab.click(); await sleep(500); }
+
     var petBlks = $$('.panel.active .petblk');
     check('寵物區塊數', petBlks.length, PET_WANT.pets);
     if (petBlks.length) {
@@ -844,6 +857,12 @@
       var petIcons = petCells.filter(function (c) { return c.querySelector('img'); });
       log.push('  有圖的格子：' + petIcons.length + '／' + petCells.length
         + '（缺的是沒設定的技能格）');
+    }
+    if (petTab) {
+      var eqTab = $$('.panel.active .gtabs > .pset-bar > .pset').filter(function (b) {
+        return b.textContent.trim() === '裝備';
+      })[0];
+      if (eqTab) { eqTab.click(); await sleep(500); }
     }
 
     /* 機器人那一格。NEXON 把它放在 character/android-equipment，不塞進

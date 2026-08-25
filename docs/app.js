@@ -1064,8 +1064,11 @@ function petCell(icon, name, placeholder) {
  *
  * 只放圖，詳細的技能清單、說明與到期日留在「寵物」分頁 —— 那些遊戲的
  * PET 視窗也沒有。
+ *
+ * 只回格線本身，外框由裝備面板負責 —— 它是 EQUIPMENT INVENTORY 底下的
+ * 一個分頁，不是自己一個視窗。
  */
-function petPanel() {
+function petGrid() {
   const pet = d('pet');
   if (!pet) return null;
 
@@ -1096,10 +1099,7 @@ function petPanel() {
     box.appendChild(blk);
   }
 
-  if (!any) return null;
-  const panel = gamePanel('PET', box);
-  panel.classList.add('gpanel-pet');
-  return panel;
+  return any ? box : null;
 }
 
 function overviewEquip() {
@@ -1125,10 +1125,18 @@ function overviewEquip() {
     if (arr) defs.push({ label: label, build: () => equipContent(arr.concat(fixed)) });
   });
 
+  /* 頂層的「裝備／寵物」照遊戲的 EQUIPMENT INVENTORY 視窗 —— 那個視窗
+     上面就是這兩個分頁，預設組在下面一層。 */
+  const top = [{ label: '裝備', build: () => presetTabs(defs, 0) }];
+  const pets = petGrid();
+  if (pets) top.push({ label: '寵物', build: () => pets });
+
   const panel = el('div', 'gpanel gpanel-eq');
-  panel.appendChild(el('div', 'gpanel-head', 'EQUIPMENT'));
+  panel.appendChild(el('div', 'gpanel-head', 'EQUIPMENT INVENTORY'));
   const body = el('div', 'gpanel-body');
-  body.appendChild(presetTabs(defs, 0));
+  body.appendChild(top.length > 1
+    ? presetTabs(top, 0, 'psets gtabs')
+    : presetTabs(defs, 0));
   panel.appendChild(body);
 
   const col = el('div', 'ov-col ov-col-eq');
@@ -1245,8 +1253,15 @@ function collapsify(root, scope) {
  * defs = [{ label, build:()=>Node }]，active 為預設選中的索引。
  * 各分頁的內容第一次點開才建，建好後留著重用。
  */
-function presetTabs(defs, active) {
-  const box = el('div', 'psets');
+/**
+ * 一排分頁 + 內容。
+ *
+ * cls 讓同一套邏輯做出兩種外觀：預設組是膠囊按鈕（'psets'），
+ * 面板頂層的「裝備／寵物」是底線分頁（'psets gtabs'）—— 兩層都用膠囊
+ * 的話會分不出誰是誰的上層。
+ */
+function presetTabs(defs, active, cls) {
+  const box = el('div', cls || 'psets');
   const bar = el('div', 'pset-bar');
   const body = el('div', 'pset-body');
   const built = [];
@@ -1404,11 +1419,6 @@ function renderOverview() {
     f.appendChild(cols);
     addErrors(f, ['equip']);
 
-    const pets = petPanel();
-    if (pets) {
-      f.appendChild(title('寵物'));
-      f.appendChild(pets);
-    }
 
     /* 套裝效果是全域的，不隨預設組改變，所以放在兩欄外面 */
     const se = d('setEffect');
