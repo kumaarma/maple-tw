@@ -807,6 +807,9 @@
     await sleep(200);
   }
 
+  /* fixtures 那隻角色有三隻寵物，其中一隻只設了一個自動技能 */
+  var PET_WANT = { pets: 3 };
+
   async function runSoul() {
     await lookup();
     head();
@@ -829,6 +832,19 @@
     var cells = $$('.panel.active .eqcell').filter(function (c) {
       return c.querySelector('img');
     });
+
+    /* 寵物面板。三隻各是一個 2×2 區塊，沒有的技能格子照樣留著 ——
+       少畫的話下排會對不齊，但畫面不會壞，看不出來。 */
+    var petBlks = $$('.panel.active .petblk');
+    check('寵物區塊數', petBlks.length, PET_WANT.pets);
+    if (petBlks.length) {
+      // 別叫 cells —— var 是函式作用域，會蓋掉上面裝備用的那個
+      var petCells = $$('.panel.active .petblk .eqcell');
+      check('每隻寵物都是 4 格', petCells.length, petBlks.length * 4);
+      var petIcons = petCells.filter(function (c) { return c.querySelector('img'); });
+      log.push('  有圖的格子：' + petIcons.length + '／' + petCells.length
+        + '（缺的是沒設定的技能格）');
+    }
 
     /* 機器人那一格。NEXON 把它放在 character/android-equipment，不塞進
        item_equipment —— 所以「目前穿戴」要另外補進來。補漏了的話那格只是

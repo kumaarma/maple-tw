@@ -94,6 +94,50 @@ a { color: var(--accent); }
   .ov-cols .gpanel { max-width: none; }
 }
 
+/* ---------- 寵物面板 ---------- */
+
+/* 排法照遊戲的 PET 視窗：一隻寵物一個 2×2 區塊，中間夾名字。
+   auto-fill 讓寬螢幕三隻並排、窄螢幕自己換行。 */
+.gpanel-pet { max-width: 620px; }
+.petgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+.petblk {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  min-width: 0;
+}
+/* 格子固定 62px 置中，不跟著區塊寬度長大。.eqcell 有 aspect-ratio: 1，
+   用 1fr 的話窄螢幕一欄時會撐成 139px 高、裡面只有 30px 的圖 ——
+   掃描器會判成空白破洞（門檻 60px），而且看起來也確實是一大塊空的。
+   遊戲的格子本來就是固定尺寸。 */
+.petblk-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 62px));
+  justify-content: center;
+  gap: 6px;
+}
+.petblk-name {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 6px;
+  background: var(--card);
+  border-radius: 99px;
+  /* 寵物名字可能很長，撐開會把兩欄格子擠歪 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 沒有的技能格子照樣留著，三隻寵物的下排才對得齊 */
+.petblk .eqcell.empty .eq-slotname { font-size: 8.5px; letter-spacing: .3px; }
+
 /* ---------- 內在潛能：等級顏色橫條 ---------- */
 
 /* 顏色照遊戲 ABILITY 面板：傳說綠、罕見橘、稀有紫、特殊藍。

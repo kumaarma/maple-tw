@@ -427,7 +427,7 @@ const TABS = [
   /* 裝備併進總覽了，不再另立分頁 —— 預設組切換就在 EQUIPMENT 面板裡。
      代價是 setEffect 也變成一定會抓（套裝效果跟著搬過來）。 */
   ['總覽',     ['basic', 'stat', 'popularity', 'ability', 'hyperStat', 'propensity', 'dojang',
-               'equip', 'setEffect', 'android'], renderOverview],
+               'equip', 'setEffect', 'android', 'pet'], renderOverview],
   ['造型',     ['beauty', 'android', 'cash'],                   renderCosmetic],
   ['寵物',     ['pet'],                                         renderPets],
   ['萌獸',     ['familiar'],                                    renderFamiliar],
@@ -1043,6 +1043,65 @@ function withAndroid(items) {
   }]);
 }
 
+/** 寵物面板裡的一格。沒有圖就退成佔位文字，格子仍然佔位，版面才不會塌 */
+function petCell(icon, name, placeholder) {
+  const cell = el('div', 'eqcell' + (icon ? '' : ' empty'));
+  if (icon) {
+    cell.title = txt(name);
+    cell.appendChild(iconImg(icon, 30, String(name || '?').slice(0, 2)));
+  } else {
+    cell.appendChild(el('span', 'eq-slotname', placeholder));
+  }
+  return cell;
+}
+
+/**
+ * 寵物面板，排法照遊戲的 PET 視窗。
+ *
+ * 一隻寵物是一個 2×2 區塊：上排是寵物本體與牠的裝備，中間是名字，
+ * 下排兩格是自動技能。沒有的技能格子照樣留著（遊戲裡是灰色的
+ * 「PET SKILL」），少畫的話三隻寵物的下排會對不齊。
+ *
+ * 只放圖，詳細的技能清單、說明與到期日留在「寵物」分頁 —— 那些遊戲的
+ * PET 視窗也沒有。
+ */
+function petPanel() {
+  const pet = d('pet');
+  if (!pet) return null;
+
+  const box = el('div', 'petgrid');
+  let any = 0;
+
+  for (let i = 1; i <= 3; i++) {
+    const p = (k) => pet['pet_' + i + '_' + k];
+    if (!p('name')) continue;
+    any++;
+
+    const blk = el('div', 'petblk');
+
+    const top = el('div', 'petblk-row');
+    top.appendChild(petCell(p('icon'), p('name'), '寵物'));
+    const eq = p('equipment') || {};
+    top.appendChild(petCell(eq.item_icon, eq.item_name, '無裝備'));
+    blk.appendChild(top);
+
+    blk.appendChild(el('div', 'petblk-name', txt(p('nickname') || p('name'))));
+
+    const a = p('auto_skill') || {};
+    const bot = el('div', 'petblk-row');
+    bot.appendChild(petCell(a.skill_1_icon, a.skill_1, 'PET SKILL'));
+    bot.appendChild(petCell(a.skill_2_icon, a.skill_2, 'PET SKILL'));
+    blk.appendChild(bot);
+
+    box.appendChild(blk);
+  }
+
+  if (!any) return null;
+  const panel = gamePanel('PET', box);
+  panel.classList.add('gpanel-pet');
+  return panel;
+}
+
 function overviewEquip() {
   const equip = d('equip');
   if (!equip || !Array.isArray(equip.item_equipment) || !equip.item_equipment.length) {
@@ -1344,6 +1403,12 @@ function renderOverview() {
 
     f.appendChild(cols);
     addErrors(f, ['equip']);
+
+    const pets = petPanel();
+    if (pets) {
+      f.appendChild(title('寵物'));
+      f.appendChild(pets);
+    }
 
     /* 套裝效果是全域的，不隨預設組改變，所以放在兩欄外面 */
     const se = d('setEffect');
