@@ -2622,7 +2622,103 @@ function hexaCard(c, icons) {
   return card;
 }
 
-function hexaStatCard(c, label) {
+/**
+ * HEXA 屬性核心每一級的實際數值。整理在 hexa-stat-table.md
+ * （巴哈姆特攻略串，原文表格是圖片，判讀後轉成文字）。
+ *
+ * 附屬性全程線性，Lv.N 就是 N 倍單級量；主屬性單級量一樣，但倍率每級不同
+ * （1~4 級 1 倍、5~7 級 2 倍、8~10 級 3 倍），所以只差一張倍率表。
+ * 索引 = 等級，[0] 是佔位。
+ */
+const HEXA_STAT_MAIN_MUL = [0, 1, 2, 3, 4, 6, 8, 10, 13, 16, 20];
+const HEXA_STAT_LV_MAX = 10;
+
+/* 屬性種類與單級量。順序照 hexa-stat-table.md 的欄位，也是合計那一排的顯示順序。
+   第四欄為真代表要補百分號。API 回的名稱只實測到爆擊/boss/主屬三種，其餘照遊戲內
+   選項名寫成寬鬆的比對，對不到就不顯示數值（寧可少顯示也不亂猜）。 */
+const HEXA_STAT_KINDS = [
+  [/爆擊傷害|暴擊傷害|critical/i, '爆擊傷害',    0.35, true],
+  [/boss/i,                       'BOSS 傷害',   1,    true],
+  [/無視/,                        '防禦無視',    1,    true],
+  [/^傷害/,                       '總傷害',      0.75, true],
+  [/攻擊力|魔力/,                 '攻擊力/魔力', 5,    false],
+  [/主要?屬性|主屬/,              '主要屬性',    100,  false],
+];
+
+/* 主要屬性增加的單級量要看職業：一般職業 +100，傑諾是 STR/DEX/LUK 各 +48，
+   惡魔復仇者沒有主屬性，換算成 HP +2,100。 */
+const HEXA_STAT_MAIN_ATTR = { 傑諾: 48, 惡魔復仇者: 2100 };
+
+function hexaStatUnit(name, cls) {
+  const n = String(name || '');
+  for (let i = 0; i < HEXA_STAT_KINDS.length; i++) {
+    const [re, label, unit, pct] = HEXA_STAT_KINDS[i];
+    if (!re.test(n)) continue;
+    return {
+      rank: i,
+      label: label,
+      pct: pct,
+      unit: label === '主要屬性' ? (HEXA_STAT_MAIN_ATTR[cls] || 100) : unit,
+    };
+  }
+  return null;
+}
+
+/** 一張卡片上的三條屬性，攤成 [名稱, 等級, 是不是主屬性欄位] */
+function hexaStatLines(c) {
+  return [[c.main_stat_name, c.main_stat_level, true],
+          [c.sub_stat_name_1, c.sub_stat_level_1, false],
+          [c.sub_stat_name_2, c.sub_stat_level_2, false]]
+    .filter(([n]) => n);
+}
+
+/**
+ * 一條屬性在該等級的加成，例如 '+4.55%' / '+1,300'。
+ * main 為真時走主屬性欄位的倍率表，否則走附屬性。
+ */
+function hexaStatValue(name, level, main, cls) {
+  const lv = Math.min(lvNum(level), HEXA_STAT_LV_MAX);
+  if (lv < 1) return null;
+  const u = hexaStatUnit(name, cls);
+  if (!u) return null;
+
+  const v = u.unit * (main ? HEXA_STAT_MAIN_MUL[lv] : lv);
+  // 0.35 這種單級量乘出來會有浮點尾巴（0.35 * 13 = 4.550000000000001），要收掉
+  return '+' + (u.pct ? (Math.round(v * 100) / 100) + '%' : num(v));
+}
+
+/**
+ * 幾顆能力值核心加起來的總量，依屬性種類合併。
+ *
+ * 卡片上看得到每一條是幾級、加多少，但同一種屬性散在三顆核心上（例如爆傷
+ * 同時當第一顆的主屬性和第二顆的附屬性），實際吃到多少要自己加。
+ *
+ * 回傳 [{ label, text }]，順序照 HEXA_STAT_KINDS。
+ */
+function hexaStatTotals(cores, cls) {
+  const by = {};
+
+  (cores || []).forEach((c) => {
+    hexaStatLines(c).forEach(([n, lv, main]) => {
+      const u = hexaStatUnit(n, cls);
+      const l = Math.min(lvNum(lv), HEXA_STAT_LV_MAX);
+      if (!u || l < 1) return;
+      const g = by[u.label] || (by[u.label] = { u: u, sum: 0 });
+      g.sum += u.unit * (main ? HEXA_STAT_MAIN_MUL[l] : l);
+    });
+  });
+
+  return Object.keys(by)
+    .sort((a, b) => by[a].u.rank - by[b].u.rank)
+    .map((k) => ({
+      label: k,
+      // 逐項相加同樣會累積浮點尾巴（0.35 的倍數加三次），跟單項一樣收掉
+      text: '+' + (by[k].u.pct ? (Math.round(by[k].sum * 100) / 100) + '%'
+                               : num(by[k].sum)),
+    }));
+}
+
+function hexaStatCard(c, label, cls) {
   const card = el('div', 'item hexa-card');
 
   const box = el('div', 'item-icon');
@@ -2636,14 +2732,13 @@ function hexaStatCard(c, label) {
   body.appendChild(head);
 
   const list = el('div', 'item-opts');
-  [[c.main_stat_name, c.main_stat_level, true],
-   [c.sub_stat_name_1, c.sub_stat_level_1, false],
-   [c.sub_stat_name_2, c.sub_stat_level_2, false]]
-    .filter(([n]) => n)
+  hexaStatLines(c)
     .forEach(([n, lv, main]) => {
       const line = el('div', main ? 'hexa-main' : null);
       line.appendChild(document.createTextNode(n + '　'));
       line.appendChild(el('b', null, 'Lv.' + txt(lv)));
+      const val = hexaStatValue(n, lv, main, cls);
+      if (val) line.appendChild(el('span', 'hexa-val', val));
       list.appendChild(line);
     });
   body.appendChild(list);
@@ -3568,11 +3663,22 @@ function renderHexa() {
 
     const cards = [];
     groups.forEach(([key, label]) => {
-      (hexaStat[key] || []).forEach((c) => cards.push(hexaStatCard(c, label)));
+      (hexaStat[key] || []).forEach((c) => cards.push(hexaStatCard(c, label, cls)));
     });
 
     if (cards.length) {
       f.appendChild(title('HEXA 能力值'));
+
+      /* 合計擺在卡片前面：同一種屬性會散在三顆核心上，卡片一張一張看不出
+         實際吃到多少 */
+      const totals = hexaStatTotals(
+        groups.reduce((a, [key]) => a.concat(hexaStat[key] || []), []), cls);
+      if (totals.length) {
+        f.appendChild(kvGrid(totals.map((t) => [t.label, t.text])));
+        f.appendChild(el('p', 'hint',
+          '合計是這三顆已裝備核心加起來的量，下面的預設組合不算在內。'));
+      }
+
       const wrap = el('div', 'items');
       cards.forEach((c) => wrap.appendChild(c));
       f.appendChild(wrap);
@@ -3591,7 +3697,7 @@ function renderHexa() {
       presets.forEach(([key, label]) => {
         const wrap = el('div', 'items');
         (hexaStat[key] || []).forEach((c, i) => {
-          wrap.appendChild(hexaStatCard(c, label + '-' + (i + 1)));
+          wrap.appendChild(hexaStatCard(c, label + '-' + (i + 1), cls));
         });
         det.appendChild(wrap);
       });

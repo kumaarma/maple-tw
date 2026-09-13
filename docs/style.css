@@ -461,6 +461,8 @@ button.ghost {
 button.ghost:hover { color: var(--text); border-color: var(--accent-dim); }
 
 .hint { color: var(--muted); font-size: 12px; margin: 12px 2px 0; }
+/* 註解後面直接接卡片列時，卡片會貼著文字，補一點呼吸空間 */
+.hint + .items { margin-top: 10px; }
 
 main {
   max-width: 1180px;
@@ -1601,6 +1603,13 @@ td.rank-name { font-weight: 600; }
 }
 .hexa-main { color: var(--text) !important; }
 .hexa-main b { color: var(--accent); }
+
+/* 等級旁邊的實際加成（+4.55%）。等級是重點，數值退一階當註解看 */
+.hexa-val {
+  margin-left: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.hexa-main .hexa-val { color: var(--muted); }
 
 /* ---------- 六轉進度 ---------- */
 
