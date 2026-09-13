@@ -120,7 +120,10 @@ export default {
 
     /* --- 代理到官方 --- */
     const params = new URLSearchParams(url.search);
-    params.delete('_fresh');                       // 前端用的旗標，不往上游送
+    /* 「重新整理」按鈕的旗標。要在刪掉之前先讀出來 —— 以前直接刪，下面的
+       快取讀取照跑，按了重新整理拿回來的還是快取。不往上游送，也不進快取鍵。 */
+    const force = params.get('_fresh') === '1';
+    params.delete('_fresh');
     const hasDate = !!params.get('date');
     const target = UPSTREAM + '/' + path
       + (params.toString() ? '?' + params.toString() : '');
@@ -134,8 +137,9 @@ export default {
       { method: 'GET' }
     );
 
+    // 強制更新只跳過讀取；拿到新資料後照常寫回快取，蓋掉舊的那份
     try {
-      const hit = await cache.match(cacheKey);
+      const hit = force ? null : await cache.match(cacheKey);
       if (hit) {
         const out = new Response(hit.body, hit);
         Object.entries(corsHeaders(origin)).forEach(([k, v]) => out.headers.set(k, v));

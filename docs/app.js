@@ -172,19 +172,14 @@ async function rawCall(path, params) {
 }
 
 /**
- * 打本機代理。若帶了 date 而失敗，會再試一次不帶 date
- * （部分端點對日期敏感，不帶就回最新一筆）。
+ * 打代理，失敗就 throw。
+ *
+ * 以前帶 date 失敗時會拿掉 date 再試一次，結果查歷史日期的畫面裡混進了
+ * 「現在」的數值，而且看不出是哪幾區被換掉。使用者指定了日期就照那個日期，
+ * 查不到就報錯。
  */
 async function api(path, params) {
-  params = params || {};
-  let r = await rawCall(path, params);
-
-  if (!r.ok && params.date) {
-    const retry = Object.assign({}, params);
-    delete retry.date;
-    const r2 = await rawCall(path, retry);
-    if (r2.ok) { refreshQuota(); return r2.body; }
-  }
+  const r = await rawCall(path, params || {});
 
   refreshQuota();
   if (!r.ok) {
@@ -300,21 +295,31 @@ let QDATE = '';
 let FRESH = false;      // 下一批請求要不要跳過伺服器快取
 let FETCHED_AT = null;  // 這批資料的取得時間，顯示在「最近更新」
 
+/* 每次查詢遞增一次。非同步請求回來時若這個值已經變了，代表中途換了角色，
+   回應一律丟掉 —— 不然 A 的分頁還在載入時查 B，A 的裝備會寫進 B 的 DATA。 */
+let LOOKUP_SEQ = 0;
+
 function d(key) {
   const s = DATA[key];
   return (s && s.ok) ? s.data : null;
 }
 
-/** 按需抓取：只打還沒抓過的端點，省配額 */
+/**
+ * 按需抓取：只打還沒抓過的端點，省配額。
+ * 回傳 false 代表回來時已經換了角色，結果沒有寫入，呼叫端也不該再渲染。
+ */
 async function need(keys) {
+  const seq = LOOKUP_SEQ;
+  if (!OCID) return false;
   const missing = keys.filter((k) => !DATA[k]);
-  if (!missing.length) return;
+  if (!missing.length) return true;
+  const base = { ocid: OCID, date: QDATE, _fresh: FRESH ? '1' : '' };
   const results = await Promise.all(
-    missing.map((k) => trySection(EP[k], Object.assign({
-      ocid: OCID, date: QDATE, _fresh: FRESH ? '1' : '',
-    }, EP_EXTRA[k] || {})))
+    missing.map((k) => trySection(EP[k], Object.assign({}, base, EP_EXTRA[k] || {})))
   );
+  if (seq !== LOOKUP_SEQ) return false;
   missing.forEach((k, i) => { DATA[k] = results[i]; });
+  return true;
 }
 
 /**
@@ -350,26 +355,40 @@ async function lookup(name, date) {
   const box = $('#status');
   const out = $('#result');
 
+  const seq = ++LOOKUP_SEQ;
   out.hidden = true;
   spinner(box, '查詢「' + name + '」中…');
   $('#goBtn').disabled = true;
   DATA = {};
+  OCID = '';
   QDATE = date;
 
+  let ocid;
   try {
-    const id = await api('id', { character_name: name });
-    OCID = id.ocid;
+    ocid = (await api('id', { character_name: name })).ocid;
   } catch (err) {
+    if (seq !== LOOKUP_SEQ) return;
     $('#goBtn').disabled = false;
     showError(box, '找不到角色「' + name + '」：' + err.message);
     return;
   }
+  if (seq !== LOOKUP_SEQ) return;
+  OCID = ocid;
 
   // 首屏：角色卡上的三張資訊卡需要武陵與聯盟
-  await need(['basic', 'stat', 'popularity', 'dojang', 'union']);
+  if (!await need(['basic', 'stat', 'popularity', 'dojang', 'union'])) return;
   FETCHED_AT = new Date();
 
   $('#goBtn').disabled = false;
+
+  /* 沒有基本資料就沒有東西可畫。指定歷史日期時這最常見（日期早於官方資料
+     起點、或角色當時還沒建立），以前會偷偷改抓最新一筆，現在直接講清楚。 */
+  if (!DATA.basic.ok) {
+    showError(box, '讀不到「' + name + '」' + (date ? '在 ' + date + ' ' : '')
+      + '的基本資料：' + DATA.basic.error);
+    return;
+  }
+
   box.textContent = '';
   box.className = 'status';
   render(name);
@@ -464,7 +483,8 @@ function render(name) {
         s.appendChild(el('span', 'spinner'));
         s.appendChild(el('span', null, '載入「' + label + '」中…'));
         panel.appendChild(s);
-        await need(needs);
+        // 載入途中換了角色：這個面板已經不在畫面上，不要拿新角色的 DATA 畫進去
+        if (!await need(needs)) return;
         panel.innerHTML = '';
       }
       try {
@@ -3841,7 +3861,7 @@ function renderRaw() {
   fetchAll.addEventListener('click', async () => {
     fetchAll.disabled = true;
     fetchAll.textContent = '抓取中…';
-    await need(Object.keys(EP));
+    if (!await need(Object.keys(EP))) return;
     fetchAll.textContent = '抓取全部端點（21 次 API）';
     fetchAll.disabled = false;
     fill();
@@ -3899,16 +3919,26 @@ function dateRange(endDate, n) {
 }
 
 /**
- * 抓某一天的快照。
- * 這裡刻意不用 api() —— 它在失敗時會改成不帶 date 重試，
- * 那會把「最新資料」誤植成某個歷史日期，讓整條曲線失真。
+ * 抓某一天的快照。ocid 由呼叫端傳入，不讀全域 OCID —— 載入要跑幾十次請求，
+ * 途中換角色的話，後半段會變成用新角色的 ocid 去抓、存進舊角色的紀錄。
+ *
+ * 回傳快照物件，或 false 代表「確定那天沒有資料」（日期超出官方範圍、角色
+ * 當時還不存在）。429、5xx、斷線這類暫時性失敗一律 throw，呼叫端不能把它
+ * 存起來，否則那一天之後永遠不會再重抓。
  */
-async function expFetchDay(date) {
-  const r = await rawCall('character/basic', { ocid: OCID, date: date });
+async function expFetchDay(ocid, date) {
+  const r = await rawCall('character/basic', { ocid: ocid, date: date });
   refreshQuota();
-  if (!r.ok || !r.body) return null;
+  if (!r.ok) {
+    // 400 是參數不被接受（日期超出範圍），重打也一樣；其餘狀態碼都可能下次就好
+    if (r.status === 400) return false;
+    const e = r.body && r.body.error;
+    const err = new Error(e ? (e.message || e.name) : ('HTTP ' + r.status));
+    err.status = r.status;
+    throw err;
+  }
   const b = r.body;
-  if (b.character_level === undefined || b.character_level === null) return null;
+  if (!b || b.character_level === undefined || b.character_level === null) return false;
   return {
     lv: Number(b.character_level),
     exp: Number(b.character_exp),
@@ -3950,8 +3980,21 @@ function fmtPct(v) {
   return (v >= 0 ? '+' : '') + (v * 100).toFixed(pctDp(v)) + '%';
 }
 
+/**
+ * 這一天還要不要抓。store 裡的值：快照物件＝有資料、false＝確定沒資料。
+ * null 是舊版的寫法，當時暫時失敗也存成 null，分不出來，所以當作沒抓過。
+ */
+function expNeedsFetch(store, day) {
+  return store[day] === undefined || store[day] === null;
+}
+
 function renderExp() {
   const f = frag();
+
+  /* 這個分頁屬於畫它時的那個角色，之後換角色也不能跟著變 */
+  const ocid = OCID;
+  const qdate = QDATE;
+  const seq = LOOKUP_SEQ;
 
   f.appendChild(title('經驗追蹤'));
 
@@ -3976,15 +4019,19 @@ function renderExp() {
     + '歷史日期抓過就永久存在瀏覽器，之後重看只會重抓今日那一筆。');
   f.appendChild(note);
 
+  const errBox = el('div', 'err-line');
+  errBox.hidden = true;
+  f.appendChild(errBox);
+
   const out = el('div', 'exp-out');
   f.appendChild(out);
 
   let live = null;      // 「今日」那一列，不帶 date 取得，只留在本次工作階段
 
   function missingCount() {
-    const store = expLoad(OCID);
-    const days = dateRange(QDATE || latestDataDate(), Number(sel.value));
-    return days.filter((d) => store[d] === undefined).length + (live ? 0 : 1);
+    const store = expLoad(ocid);
+    const days = dateRange(qdate || latestDataDate(), Number(sel.value));
+    return days.filter((d) => expNeedsFetch(store, d)).length + (live ? 0 : 1);
   }
 
   function syncCost() {
@@ -3998,33 +4045,43 @@ function renderExp() {
 
   go.addEventListener('click', async () => {
     go.disabled = true;
-    const days = dateRange(QDATE || latestDataDate(), Number(sel.value));
-    const store = expLoad(OCID);
+    errBox.hidden = true;
+    const days = dateRange(qdate || latestDataDate(), Number(sel.value));
+    const store = expLoad(ocid);
 
-    const todo = days.filter((d) => store[d] === undefined);
+    const todo = days.filter((d) => expNeedsFetch(store, d));
     let done = 0;
     const total = todo.length + 1;
-    for (const day of todo) {
+    try {
+      for (const day of todo) {
+        // 已經換角色了：這個分頁不在畫面上，剩下的別再燒配額
+        if (seq !== LOOKUP_SEQ) return;
+        go.textContent = '載入中 ' + (++done) + '/' + total;
+        store[day] = await expFetchDay(ocid, day);   // false 也存，那天確定查不到
+        expSave(ocid, store);
+      }
+
+      // 最後抓「今日」——不帶 date，拿的是當下狀態
+      if (seq !== LOOKUP_SEQ) return;
       go.textContent = '載入中 ' + (++done) + '/' + total;
-      const snap = await expFetchDay(day);
-      store[day] = snap;          // null 也存，代表那天查不到，不用再試
-      expSave(OCID, store);
+      live = (await expFetchDay(ocid, '')) || null;
+    } catch (err) {
+      /* 遇到第一個失敗就停：429 時繼續打只會一路 429。已經抓到的日期都存了，
+         再按一次「載入」會從失敗的那天接著抓。 */
+      errBox.textContent = '載入中斷：' + err.message + '。已取得的日期已保留，可以再按一次「載入」繼續。';
+      errBox.hidden = false;
+    } finally {
+      go.textContent = '載入';
+      go.disabled = false;
+      syncCost();
+      draw();
     }
-
-    // 最後抓「今日」——不帶 date，拿的是當下狀態
-    go.textContent = '載入中 ' + (++done) + '/' + total;
-    live = await expFetchDay('');
-
-    go.textContent = '載入';
-    go.disabled = false;
-    syncCost();
-    draw();
   });
 
   function draw() {
     out.innerHTML = '';
-    const store = expLoad(OCID);
-    const days = dateRange(QDATE || latestDataDate(), Number(sel.value));
+    const store = expLoad(ocid);
+    const days = dateRange(qdate || latestDataDate(), Number(sel.value));
     const known = days.filter((d) => store[d]);
 
     if (known.length < 2) {
@@ -4310,15 +4367,19 @@ async function cmpFetch(name) {
   const id = await api('id', { character_name: name });
   const ocid = id.ocid;
 
-  const [basic, stat, equip] = await Promise.all([
-    trySection('character/basic', { ocid: ocid }),
-    trySection('character/stat', { ocid: ocid }),
-    trySection('character/item-equipment', { ocid: ocid }),
-  ]);
+  const parts = [['基本資料', 'character/basic'], ['能力值', 'character/stat'],
+                 ['裝備', 'character/item-equipment']];
+  const results = await Promise.all(parts.map(([, p]) => trySection(p, { ocid: ocid })));
 
-  const b = basic.ok ? basic.data : {};
-  const s = stat.ok ? stat.data : {};
-  const eq = equip.ok ? equip.data : {};
+  /* 三份都是比對必需的。以前失敗會當成空物件繼續算，畫面上變成「對方沒穿裝備」，
+     而且這份假結果還會進 CMP_DATA，再查一次也直接沿用。throw 出去就不會被存。 */
+  const failed = results.map((r, i) => [parts[i][0], r]).filter(([, r]) => !r.ok);
+  if (failed.length) {
+    throw new Error(name + ' 的' + failed.map(([label]) => label).join('、')
+      + '讀取失敗（' + failed[0][1].error + '）');
+  }
+
+  const [b, s, eq] = results.map((r) => r.data || {});
 
   /* 保留所有裝備頁，讓比對時可以切換 —— 有些角色目前穿戴的不是最強的那套。 */
   const cur = Array.isArray(eq.item_equipment) ? eq.item_equipment : [];

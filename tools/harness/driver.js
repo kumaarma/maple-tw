@@ -402,10 +402,14 @@
       check('未開放的追加需求',
         /靈魂艾爾達 ([\d,]+)　碎片 ([\d,]+)/.test(t) ? RegExp.$1 + ' / ' + RegExp.$2 : '（無）',
         '137 / 4,035');
-      check('帶出職業的技能名',
+      /* 預期值跟著 fixtures 的職業走。以前寫死「異界殘像 VI」（凱內西斯），
+         換一隻角色產生 fixtures 就必錯。對照表以外的職業不顯示技能名。 */
+      var cls = (window.__FIX['character/basic']._ || {}).character_class || '';
+      var wantSkill = hexaCommon3Skill(cls);
+      check('帶出職業的技能名（' + (cls || '無職業') + '）',
         soon.querySelector('.hxp-soon-skill')
           ? soon.querySelector('.hxp-soon-skill').textContent.trim() : '（無）',
-        '異界殘像 VI');
+        wantSkill || '（無）');
     }
 
     /* ---- 下一步最划算 ---- */
