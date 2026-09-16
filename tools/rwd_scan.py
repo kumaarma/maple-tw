@@ -93,6 +93,7 @@ def build_page():
 
 
 def run_chrome(chrome, target, extra, timeout=180):
+    """回傳 (returncode, stdout)。逾時當成失敗，回傳碼給 None。"""
     profile = tempfile.mkdtemp(prefix="rwd-profile-")
     cmd = [chrome, "--headless=new", "--no-sandbox", "--disable-gpu",
            "--hide-scrollbars", "--allow-file-access-from-files",
@@ -101,20 +102,28 @@ def run_chrome(chrome, target, extra, timeout=180):
            "--virtual-time-budget=120000"] + extra + [target]
     try:
         r = subprocess.run(cmd, capture_output=True, timeout=timeout)
-        return r.stdout
+        return r.returncode, r.stdout
+    except subprocess.TimeoutExpired:
+        print("*** Chrome 逾時（%d 秒）" % timeout)
+        return None, b""
+    except OSError as e:
+        # 路徑不對、沒有執行權限等等：報出來，不要用 traceback 收場
+        print("*** Chrome 啟動失敗：%s" % e)
+        return None, b""
     finally:
         shutil.rmtree(profile, ignore_errors=True)
 
 
 def extract_diag(dom_bytes):
+    """取出測試輸出；沒有輸出回傳 None（＝這次根本沒測到，不是通過）。"""
     html = dom_bytes.decode("utf-8", "replace")
     m = re.search(r'<pre id="diag">(.*?)</pre>', html, re.S)
     if not m:
-        return "（抓不到測試輸出，Chrome 可能沒跑完）"
+        return None
     t = m.group(1)
     for a, b in [("&quot;", '"'), ("&lt;", "<"), ("&gt;", ">"), ("&amp;", "&")]:
         t = t.replace(a, b)
-    return t
+    return t.strip() or None
 
 
 def main():
@@ -151,23 +160,39 @@ def main():
                 tag = args.mode
             target = "%s?p=%s&%s&w=%d&h=1250" % (runner, url(page), frag, w)
             shot = os.path.join(WORK, "shot-%d-%s.png" % (w, tag))
-            run_chrome(chrome, target, ["--screenshot=" + shot,
-                                        "--window-size=%d,1400" % (w + 145)])
-            print("已截圖 %s" % shot)
+            rc, _ = run_chrome(chrome, target, ["--screenshot=" + shot,
+                                                "--window-size=%d,1400" % (w + 145)])
+            if rc != 0 or not os.path.exists(shot):
+                print("*** 截圖失敗（Chrome 回傳 %s）：%s" % (rc, shot))
+                problems += 1
+            else:
+                print("已截圖 %s" % shot)
             continue
 
         target = "%s?p=%s&mode=%s&w=%d&h=1400" % (runner, url(page), args.mode, w)
-        dom = run_chrome(chrome, target, ["--dump-dom",
-                                          "--window-size=%d,900" % (w + 145)])
+        rc, dom = run_chrome(chrome, target, ["--dump-dom",
+                                              "--window-size=%d,900" % (w + 145)])
         text = extract_diag(dom)
         print("=" * 56)
         print("寬度 %dpx　模式 %s" % (w, args.mode))
         print("=" * 56)
-        print(text)
-        print()
-        problems += text.count("***")
 
-    if args.shot is None:
+        if rc != 0:
+            print("*** Chrome 沒有正常結束（回傳 %s），這次沒有測到" % rc)
+            problems += 1
+        if text is None:
+            # 沒有輸出就是沒測到，不能算通過 —— 以前這裡照樣印「全部通過」
+            print("*** 抓不到測試輸出，Chrome 可能沒跑完")
+            problems += 1
+        else:
+            print(text)
+            # runner.html 等不到結果時會把逾時訊息寫進 #diag
+            if "逾時" in text or "讀不到 iframe" in text:
+                problems += 1
+            problems += text.count("***")
+        print()
+
+    if args.shot is None or problems:
         print("找到 %d 處問題。" % problems if problems else "全部通過。")
     return 1 if problems else 0
 

@@ -1891,6 +1891,8 @@ pre.raw {
 .el-gainval { color: #cf7418; font-weight: 600; }
 .el-gainval.zero { color: var(--muted); font-weight: 400; }
 .el-lvup { color: var(--good); font-size: 11px; }
+/* 跨日缺口的註記：是警語不是數據，壓成次要 */
+.el-span { color: var(--muted); font-size: 11px; white-space: nowrap; }
 
 .chart-wrap {
   position: relative;

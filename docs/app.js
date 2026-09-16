@@ -108,12 +108,30 @@ function secs(v) {
  * 官方資料一天只更新一次：凌晨 2 點後才查得到「前一天」的資料
  * （韓版公告載明 2024-07-11 起由 1 點改為 2 點）。所以在凌晨 2 點前，
  * 最新可查的其實是前天。台版沒有另外公告時間，這裡以 2 點為界較保險；
- * 萬一抓錯，api() 還會自動改成不帶 date 重試一次。
+ * 抓錯的話那天會查不到資料，不會拿到別天的數值。
  */
 function latestDataDate() {
   const tw = new Date(Date.now() + 8 * 3600 * 1000);   // 轉成 UTC+8
   tw.setUTCDate(tw.getUTCDate() - (tw.getUTCHours() < 2 ? 2 : 1));
   return tw.toISOString().slice(0, 10);
+}
+
+/** 台灣今天的日期（UTC+8） */
+function twToday() {
+  return new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
+/** 日期加減天數，都用 UTC 算，不會踩到時區與日光節約 */
+function dayShift(dateStr, days) {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** 兩個日期差幾天 */
+function dayDiff(from, to) {
+  return Math.round(
+    (Date.parse(to + 'T00:00:00Z') - Date.parse(from + 'T00:00:00Z')) / 86400000);
 }
 
 function spinner(box, label) {
@@ -584,11 +602,12 @@ function renderHero(name) {
   }
   left.appendChild(meta);
 
-  /* API 沒有登入時間欄位，這是從經驗快照反推的「最後有活動的日期」 */
+  /* API 沒有登入時間欄位，這是從經驗快照反推的「最後有活動的日期」。
+     查歷史快照時，手上這筆的日期就是 QDATE，不是今天。 */
   const act = OCID ? lastActiveFromExp(OCID, {
     lv: Number(basic.character_level),
     rate: parseFloat(basic.character_exp_rate),
-  }) : null;
+  }, QDATE) : null;
 
   const facts = el('div', 'hero-facts');
   [
@@ -596,7 +615,8 @@ function renderHero(name) {
     ['創角時間', basic.character_date_create
       ? String(basic.character_date_create).slice(0, 10).replace(/-/g, '/') : null],
     ['最後活動', act ? act.label : null,
-      'API 沒有登入時間欄位。這是從經驗快照反推的 —— 經驗有變動代表當天有上線。'
+      'API 沒有登入時間欄位。這是從經驗快照反推的 —— 經驗有變動代表那段期間有上線。'
+      + '快照之間缺了幾天就只推得出區間，指不到單一天。'
       + '需先在「經驗」分頁載入資料才會出現。'],
     ['最近更新', FETCHED_AT
       ? FETCHED_AT.toLocaleString('zh-TW', { hour12: false }).replace(/:\d\d$/, '')
@@ -1315,32 +1335,47 @@ function addErrors(f, keys) {
  * 注意快照語意：date=D 取得的是 D 當天 00:00 的狀態，所以 D-1 與 D 兩張
  * 快照之間的差異，是發生在「D-1 那一天」。
  *
+ * 兩筆快照有差異，只能證明「這段期間內有上線」，證不出是哪一天。相鄰兩天
+ * 才指得到單一日期；中間缺了幾天就只能給區間。currentDate 是 current 那筆
+ * 的日期（查最新時是今天），少了它就會拿兩週前的快取跟現在比、還標成今天，
+ * 查歷史快照時更會拿比它新的快取來比。
+ *
  * 回傳 { label, exact } 或 null（資料不足）。
  */
-function lastActiveFromExp(ocid, current) {
+function lastActiveFromExp(ocid, current, currentDate) {
   const store = expLoad(ocid);
-  const dates = Object.keys(store).filter((k) => store[k]).sort();
-  if (!dates.length) return null;
-
-  // 目前這筆（查最新時就是即時值）接在序列尾端
   const ymd = (s) => String(s).replace(/-/g, '/');
+  const today = twToday();
+  const at = currentDate || today;
 
-  const newest = store[dates[dates.length - 1]];
-  if (current && Number.isFinite(current.lv)) {
-    const g = gainInLevels(newest, current);
-    if (g !== null && Math.abs(g) > 1e-9) {
-      const tw = new Date(Date.now() + 8 * 3600 * 1000);
-      return { label: ymd(tw.toISOString().slice(0, 10)), exact: true, today: true };
-    }
-  }
+  /* 比 current 還新的快取不能用來判斷 —— 查 8/20 的快照時，9/13 的快取
+     證明的是 8/20 之後的事。 */
+  const seq = Object.keys(store)
+    .filter((k) => store[k] && k <= at)
+    .sort()
+    .map((k) => ({ date: k, snap: store[k] }));
 
-  for (let i = dates.length - 1; i >= 1; i--) {
-    const g = gainInLevels(store[dates[i - 1]], store[dates[i]]);
-    if (g !== null && Math.abs(g) > 1e-9) {
-      return { label: ymd(dates[i - 1]), exact: true };
-    }
+  // current 接在尾端；同一天已經有快照就不重複放
+  if (current && Number.isFinite(current.lv)
+      && !seq.some((e) => e.date === at)) {
+    seq.push({ date: at, snap: current, live: !currentDate || currentDate === today });
   }
-  return { label: ymd(dates[0]) + ' 之前', exact: false };
+  if (seq.length < 2) return null;
+
+  for (let i = seq.length - 1; i >= 1; i--) {
+    const a = seq[i - 1];
+    const b = seq[i];
+    const g = gainInLevels(a.snap, b.snap);
+    if (g === null || Math.abs(g) <= 1e-9) continue;
+
+    /* 快照是當天 00:00 的狀態，所以 a 與 b 的差異發生在 a 當天到 b 的前一天。
+       即時值（live）取的是「現在」，所以要算到當天為止。 */
+    const end = b.live ? b.date : dayShift(b.date, -1);
+    return end <= a.date
+      ? { label: ymd(a.date), exact: true }
+      : { label: ymd(a.date) + '～' + ymd(end), exact: false };
+  }
+  return { label: ymd(seq[0].date) + ' 之前', exact: false };
 }
 
 function renderOverview() {
@@ -1354,7 +1389,7 @@ function renderOverview() {
   const hyper = d('hyperStat');
 
   // 角色卡上的「最後活動」需要經驗快照才算得出來，這裡只判斷有沒有資料
-  const hasExp = OCID ? !!lastActiveFromExp(OCID, null) : false;
+  const hasExp = OCID ? !!lastActiveFromExp(OCID, null, QDATE) : false;
 
   /* 一排 chip，不是八張卡。八張裡有六張跟上方角色卡一字不差 —— 同一份
      資料佔兩塊版面，手機上要多捲一整屏才看得到下面的能力值。 */
@@ -3786,15 +3821,23 @@ function renderSkills() {
   const out = el('div');
   f.appendChild(out);
 
+  /* 選單切得比請求快時，先送的那次可能後回來。只有最後一次選擇能改畫面，
+     不然會出現「選單顯示 5 轉、內容是 4 轉」。 */
+  const ocid = OCID;
+  const qdate = QDATE;
+  let pickSeq = 0;
+
   sel.addEventListener('change', async () => {
     const grade = sel.value;
+    const my = ++pickSeq;
     out.innerHTML = '';
     if (!grade) return;
     out.appendChild(el('div', 'empty', '載入中…'));
 
     const r = await trySection('character/skill', {
-      ocid: OCID, date: QDATE, character_skill_grade: grade,
+      ocid: ocid, date: qdate, character_skill_grade: grade,
     });
+    if (my !== pickSeq) return;
     out.innerHTML = '';
     if (!r.ok) { out.appendChild(el('div', 'err-line', r.error)); return; }
 
@@ -3816,6 +3859,12 @@ function renderSkills() {
 }
 
 /* ---------- 原始資料 ---------- */
+
+/** 匯出用的鍵：路徑加上該端點的固定參數，例如 character/skill?character_skill_grade=6 */
+function rawDumpKey(key) {
+  const extra = EP_EXTRA[key];
+  return EP[key] + (extra ? '?' + new URLSearchParams(extra).toString() : '');
+}
 
 function renderRaw() {
   const f = frag();
@@ -3871,7 +3920,10 @@ function renderRaw() {
     const dump = { ocid: OCID, date: QDATE, character_name: $('#nameInput').value };
     Object.keys(EP).forEach((k) => {
       const s = DATA[k];
-      dump[EP[k]] = !s ? null : (s.ok ? s.data : { _error: s.error });
+      /* 鍵要帶上額外參數。skill6／skill5／skill4 都打 character/skill，
+         只用路徑當鍵的話三份會互相覆蓋 —— 最後寫入的是還沒載入的那個，
+         匯出來的技能就變成 null。 */
+      dump[rawDumpKey(k)] = !s ? null : (s.ok ? s.data : { _error: s.error });
     });
     const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
@@ -4093,26 +4145,30 @@ function renderExp() {
 
     /* 由舊到新排成一串，最後接上「今日」的即時值 */
     const seq = known.map((d) => ({ date: d, snap: store[d], live: false }));
-    if (live) seq.push({ date: null, snap: live, live: true });
+    if (live) seq.push({ date: twToday(), snap: live, live: true });
 
     const rows = seq.map((e, i) => {
-      const prev = i > 0 ? seq[i - 1].snap : null;
+      const prev = i > 0 ? seq[i - 1] : null;
       return {
         label: e.live ? '今日' : daysAgoLabel(e.date),
         date: e.date,
         live: e.live,
         snap: e.snap,
-        gain: prev ? gainInLevels(prev, e.snap) : null,
-        leveled: prev ? (e.snap.lv - prev.lv) : 0,
-        expDelta: (prev && prev.lv === e.snap.lv) ? (e.snap.exp - prev.exp) : null,
+        gain: prev ? gainInLevels(prev.snap, e.snap) : null,
+        leveled: prev ? (e.snap.lv - prev.snap.lv) : 0,
+        expDelta: (prev && prev.snap.lv === e.snap.lv) ? (e.snap.exp - prev.snap.exp) : null,
+        /* 這段成長橫跨幾天。中間有日期沒資料（沒抓、抓失敗、官方沒有）時，
+           兩筆快照的差是好幾天的累積，不能當成單日成長畫進圖表。 */
+        span: prev ? dayDiff(prev.date, e.date) : 0,
+        from: prev ? prev.date : null,
       };
     });
 
     /* 清單：新的在上 */
     out.appendChild(expListView(rows.slice().reverse()));
 
-    /* 圖表沿用同一份逐日成長（去掉最舊那列，它沒有增量） */
-    const points = rows.filter((r) => r.gain !== null).map((r) => ({
+    /* 圖表只收真正的單日成長（最舊那列沒有增量，跨日缺口的那幾列也排除） */
+    const points = rows.filter((r) => r.gain !== null && r.span === 1).map((r) => ({
       date: r.live ? '今日' : r.date.slice(5),
       gain: r.gain,
       lv: r.snap.lv,
@@ -4124,6 +4180,16 @@ function renderExp() {
       out.appendChild(el('div', 'section-title', '每日成長'));
       out.appendChild(expChart(points));
       out.appendChild(expTable(points));
+    }
+
+    const gaps = rows.filter((r) => r.gain !== null && r.span > 1);
+    if (gaps.length) {
+      out.appendChild(el('p', 'hint',
+        '有 ' + gaps.length + ' 段日期不連續（'
+        + gaps.map((g) => g.from.slice(5) + '→' + (g.live ? '今日' : g.date.slice(5))
+            + ' 共 ' + g.span + ' 天').join('、')
+        + '）。那幾段是多日累積，上面的清單標成「N 天累積」，'
+        + '不併入每日成長圖。按「載入」補齊中間的日期就會變成單日。'));
     }
   }
 
@@ -4163,6 +4229,8 @@ function expListView(rows) {
       const txt = fmtPct(r.gain);
       g.appendChild(el('span', 'el-gainval' + (parseFloat(txt) === 0 ? ' zero' : ''),
         '[' + txt + ']'));
+      // 中間缺了日期：這個數字是好幾天加起來的，要標出來才不會被當成單日
+      if (r.span > 1) g.appendChild(el('span', 'el-span', r.span + ' 天累積'));
       if (r.leveled > 0) {
         g.appendChild(el('span', 'el-lvup', '▲' + (r.leveled > 1 ? r.leveled : '')));
       }

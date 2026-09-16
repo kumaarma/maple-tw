@@ -692,6 +692,92 @@
     }
     log.push('');
     log.push('  資料範圍：' + dates[0] + ' ~ ' + dates[dates.length - 1]);
+
+    await runExpGap(dates);
+    await runLastActive();
+  }
+
+  /**
+   * 日期不連續。
+   *
+   * 中間缺幾天時，兩筆快照的差是好幾天的累積 —— 以前直接當成後面那天的
+   * 單日成長畫進圖表，一根長條偷偷代表三天。這裡把七天中間挖掉兩天，
+   * 驗那一列被標成累積、而且不進圖表。
+   */
+  async function runExpGap(dates) {
+    var key = 'tms.exp.' + OCID;
+    var store = JSON.parse(localStorage.getItem(key) || '{}');
+    delete store[dates[2]];
+    delete store[dates[3]];
+    localStorage.setItem(key, JSON.stringify(store));
+
+    await lookup();
+    var tab = $$('.tab').filter(function (t) {
+      return t.textContent.trim() === '經驗';
+    })[0];
+    tab.click();
+    await sleep(800);
+
+    log.push('');
+    log.push('日期不連續（七天挖掉中間兩天）');
+
+    check('清單列數', $$('.panel.active .explist-row').length, 5);
+
+    var spans = $$('.panel.active .el-span').map(function (n) {
+      return n.textContent.trim();
+    });
+    check('標成累積的列數', spans.length, 1);
+    check('累積天數', spans[0] || '（無）', '3 天累積');
+
+    /* 剩下的單日成長有三段（缺口那一段不算），圖表只能有這三根 */
+    var svg = $('.panel.active svg.chart');
+    check('圖表有出現', svg ? '有' : '無', '有');
+    if (svg) {
+      check('x 軸只剩單日的那幾天', xAxisLabels(svg).length, 3);
+      check('長條數', svg.querySelectorAll('path.bar').length, 3);
+      log.push('  x 軸：' + xAxisLabels(svg).map(function (t) {
+        return t.textContent.trim();
+      }).join('　'));
+    }
+
+    var hints = $$('.panel.active .hint').filter(function (p) {
+      return /不連續/.test(p.textContent);
+    });
+    check('有缺口提示', hints.length ? '有' : '無', '有');
+    if (hints.length) log.push('  ' + hints[0].textContent.trim());
+  }
+
+  /**
+   * 角色卡的「最後活動」。
+   *
+   * 以前只要現值跟最新一筆快取不同就標今天 —— 快取是兩週前的也一樣。
+   * 兩筆快照的差只證明「這段期間有上線」，證不出是哪一天，所以中間隔了
+   * 幾天就只能給區間。
+   */
+  async function runLastActive() {
+    var old2 = dayShift(latestDataDate(), -14);
+    var old1 = dayShift(latestDataDate(), -13);
+    var flat = { lv: 1, exp: 0, rate: 0 };    // 一定跟 fixtures 的現值不同
+    var store = {};
+    store[old2] = flat;
+    store[old1] = flat;
+    localStorage.setItem('tms.exp.' + OCID, JSON.stringify(store));
+
+    await lookup();
+    await sleep(200);
+
+    log.push('');
+    log.push('最後活動（手上只有兩週前的兩筆快照）');
+
+    var got = '（沒有）';
+    $$('.hero-facts .icard-r').forEach(function (r) {
+      var k = r.querySelector('.icard-k');
+      var v = r.querySelector('.icard-v');
+      if (k && v && k.textContent.trim() === '最後活動') got = v.textContent.trim();
+    });
+
+    var ymd = function (s) { return s.replace(/-/g, '/'); };
+    check('標成區間而不是今天', got, ymd(old1) + '～' + ymd(twToday()));
   }
 
   /**
