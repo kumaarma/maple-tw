@@ -282,6 +282,25 @@ class Handler(SimpleHTTPRequestHandler):
         if self.path.startswith("/api/") and not self.path.startswith("/api/status"):
             print("[%s] %s" % (time.strftime("%H:%M:%S"), self.path))
 
+    def _from_this_page(self):
+        """會改東西的端點（換金鑰、清快取）只接受這個頁面自己發的請求。
+
+        你開著伺服器時瀏覽的任何網站都能對 127.0.0.1 發請求（CSRF），
+        也能用 DNS rebinding 把自己的網域指到 127.0.0.1。所以檢查：
+          - Host 必須是本機名稱
+          - 瀏覽器標示的來源（Sec-Fetch-Site / Origin）不能是別的網站
+        """
+        host = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip("[]").lower()
+        if host not in ("127.0.0.1", "localhost", "::1"):
+            return False
+        site = (self.headers.get("Sec-Fetch-Site") or "").lower()
+        if site and site not in ("same-origin", "none"):
+            return False
+        origin = self.headers.get("Origin")
+        if origin and urlparse(origin).netloc.lower() != (self.headers.get("Host") or "").lower():
+            return False
+        return True
+
     def _send_json(self, status, obj):
         self._send_raw(status, json.dumps(obj, ensure_ascii=False).encode("utf-8"))
 
@@ -315,6 +334,9 @@ class Handler(SimpleHTTPRequestHandler):
             return
 
         if parsed.path == "/api/cache/clear":
+            if not self._from_this_page():
+                self._send_json(403, {"ok": False, "message": "只接受本機頁面的請求"})
+                return
             with _cache_lock:
                 _cache.clear()
             _cache_flush()
@@ -337,6 +359,11 @@ class Handler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
 
         if parsed.path == "/api/key":
+            # application/json 不是「簡單請求」：別的網站要送就得先過 CORS 預檢，而這裡不回 CORS 標頭
+            ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+            if ctype != "application/json" or not self._from_this_page():
+                self._send_json(403, {"ok": False, "message": "只接受本機頁面的請求"})
+                return
             length = int(self.headers.get("Content-Length") or 0)
             try:
                 payload = json.loads(self.rfile.read(length).decode("utf-8"))
