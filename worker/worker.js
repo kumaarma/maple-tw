@@ -4,7 +4,9 @@
  * 為什麼需要它：GitHub Pages 只能放靜態檔，金鑰若放前端等於公開。
  * 這支 Worker 把金鑰留在伺服器端，前端只跟它說話。
  *
- * 目前只有一道關卡：來源白名單 ALLOWED_ORIGINS。
+ * 兩道關卡：來源白名單 ALLOWED_ORIGINS，以及每個 IP 打上游的次數限制
+ * （wrangler.toml 的 [[ratelimits]] UPSTREAM_LIMITER，每分鐘 60 次，只算快取沒命中的）。
+ * 下面說的 Origin 弱點仍在，但腳本現在每個 IP 每分鐘最多用掉 60 次配額。
  *
  * 要知道它擋不住什麼：Origin 是瀏覽器自己加的標頭，curl 之類的客戶端想填
  * 什麼就填什麼。所以這道關卡只防得住「別的網站用瀏覽器來借用」，防不住
@@ -148,6 +150,18 @@ export default {
       }
     } catch (e) {
       // 讀不到就當沒快取，繼續往上游要
+    }
+
+    /* --- 關卡 2：每個 IP 打上游的次數（wrangler.toml 的 [[ratelimits]] UPSTREAM_LIMITER）---
+       Origin 擋不住 curl，這道才擋得住直接對著網址打的腳本。只算快取沒命中、真的要用到
+       NEXON 配額的請求，所以正常瀏覽幾乎不會碰到。沒設定這個綁定時照舊放行。 */
+    if (env.UPSTREAM_LIMITER) {
+      const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+      const { success } = await env.UPSTREAM_LIMITER.limit({ key: ip });
+      if (!success) {
+        return jsonResponse({ error: { name: 'RATE_LIMITED', message: '查詢太頻繁，請稍等一分鐘再試' } },
+          429, origin);
+      }
     }
 
     const upstream = await fetch(target, {

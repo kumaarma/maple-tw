@@ -7,6 +7,13 @@ compatibility_date = "2026-01-01"
 [vars]
 ALLOWED_ORIGINS = "https://kumaarma.github.io"
 
+# 每個 IP 打上游（快取沒命中）的次數上限。Origin 擋不住 curl，這個才擋得住腳本消耗配額。
+# period 只能是 10 或 60（秒）；namespace_id 是自己取的正整數字串，同帳號內不要重複。
+[[ratelimits]]
+name = "UPSTREAM_LIMITER"
+namespace_id = "1001"
+simple = { limit = 60, period = 60 }
+
 # 機密用指令設定，不要寫在這個檔案裡（這個檔會進 git）：
 #   wrangler secret put NEXON_KEY
 #
